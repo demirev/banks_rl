@@ -8,6 +8,8 @@ SimpleSavings <- R6Class(
     Optimizer  = list(),
     loss       = NULL,
     beta       = 0.99,
+    reset_hhl  = list(),
+    reset_bnk  = list(),
     
     initialize = function(
       households, 
@@ -21,11 +23,14 @@ SimpleSavings <- R6Class(
       self$DQN        <- dqns
       self$loss       <- lossFunction
       
-      Optimizer$withdraw <- optim$Adam(DQN$withdraw$current$parameters())
-      Optimizer$deposit  <- optim$Adam(DQN$deposit$current$parameters())
+      self$reset_hhl  <- lapply(households, function(x) x$clone())
+      self$reset_bnk  <- lapply(banks, function(x) x$clone())
       
-      Buffer$withdraw <- ReplayBuffer(bufferSize)
-      Buffer$deposit  <- ReplayBuffer(bufferSize)
+      self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters())
+      self$Optimizer$deposit  <- optim$Adam(self$DQN$deposit$current$parameters())
+      
+      self$Buffer$withdraw <- ReplayBuffer(bufferSize)
+      self$Buffer$deposit  <- ReplayBuffer(bufferSize)
       
     },
     
@@ -52,12 +57,12 @@ SimpleSavings <- R6Class(
       return(decisionStates)
     },
     
-    step = function(Withdrawals, Deposits) {
+    step = function(Withdrawals, Deposits) { 
       "Steps through one turn given two decision vectors"
       
-      # last element corresponds to no action (no withdrawal or deposit)
-      Withdrawals <- Withdrawals[-length(Withdrawals)]
-      Deposits    <- Deposits[-length(Deposits)]
+      # last element corresponds to no action (no withdrawal or deposit) 
+      Withdrawals <- lapply(Withdrawals, function(x) x[-length(x)])
+      Deposits    <- lapply(Deposits, function(x) x[-length(x)])
       
       # 1. each bank loses withdrawn money
       self$withdraw(Withdrawals)
@@ -87,13 +92,13 @@ SimpleSavings <- R6Class(
       interestRates <- sapply(
         self$Banks, 
         function(bank) {
-          bank$interstRate
+          bank$interestRate
         }
       )
       lapply(
         self$Households,
         function(household) {
-          household$getInterest(interests)
+          household$getInterest(interestRates)
         }
       )
       
@@ -104,7 +109,7 @@ SimpleSavings <- R6Class(
     },
     
     withdraw = function(Decisions) {
-      "Decreases bank balances given a list of per household withdrawals"
+      "Decreases bank balances given a list of per household withdrawals" 
       amounts <- map2(
         self$Households, Decisions,
         function(household, decision) {
@@ -118,7 +123,7 @@ SimpleSavings <- R6Class(
         }
       ) %>%
         reduce(cbind) %>%
-        colSums
+        rowSums
       
       map2(
         self$Banks, amounts,
@@ -130,15 +135,19 @@ SimpleSavings <- R6Class(
     },
     
     deposit = function(Decisions) {
-      "Increases bank balances given a list of per household withdrawals"
+      "Increases bank balances given a list of per household withdrawals" 
       amounts <- map2(
         self$Households, Decisions,
         function(household, decision) {
           # vector with amount deposited in each bank (all but one are zero)
-          household$cash * (decision == 1)
+          res <- household$cash * (decision == 1)
+          household$holdings <- household$holdings + res
           if (sum(decision) != 0) household$cash <- 0
+          return(res)
         }
-      )
+      ) %>%
+        reduce(cbind) %>%
+        rowSums
       
       map2(
         self$Banks, amounts,
@@ -159,12 +168,19 @@ SimpleSavings <- R6Class(
       )
     },
     
+    reset = function() {
+      self$Households <- lapply(self$reset_hhl, function(x) x$clone())
+      self$Banks <- lapply(self$reset_bnk, function(x) x$clone())
+      return(self$getInfoSet())
+    },
+    
     train = function(
-      numEpisodes = 10000, 
+      numEpisodes = 10000,
       resetProb = 0.001, 
       batch_size = 256,
       updateFreq = 200
     ) {
+      "Train the networks"
       # reset the economy
       InfoSets <- self$reset()
       
@@ -174,18 +190,34 @@ SimpleSavings <- R6Class(
         epsilon <- generateEpsilon(episode)
         
         # 1. choose actions
-        Withdrawals <- sapply(InfoSets, self$DQN$withdraw$current$act)
-        Deposits    <- sapply(InfoSets, self$DQN$deposit$current$act)
+        Withdrawals <- lapply(
+          InfoSets, 
+          function(info) {
+            decision <- self$DQN$withdraw$current$act(info, epsilon)
+            vec <- rep(0, length(self$Banks) + 1) # +1 to allow for inaction 
+            vec[decision + 1] <- 1
+            return(vec)
+          }
+        )
+        Deposits <- lapply(
+          InfoSets, 
+          function(info) {
+            decision <- self$DQN$deposit$current$act(info, epsilon)
+            vec <- rep(0, length(self$Banks) + 1)
+            vec[decision + 1] <- 1
+            return(vec)
+          }
+        )
         
         # 2. interact with the economy
         Episode <- self$step(Withdrawals, Deposits)
         
         # push to buffers
         pmap(
-          list(InfoSets, Withdrawals, Episode$rewards, Episode$nextState), 
-          function(state, action, reward, next_state) {
-            self$buffer_withdraw$push(state, action, reward, next_state)
-            self$buffer_deposit$push(state, action, reward, next_state)
+          list(InfoSets, Withdrawals, Deposits, Episode$reward, Episode$nextState), 
+          function(state, action_w, action_d, reward, next_state) {
+            self$Buffer$withdraw$push(state, which.max(action_w) - 1L, reward, next_state)
+            self$Buffer$deposit$push(state, which.max(action_d) - 1L, reward, next_state)
           }
         )
         
@@ -196,16 +228,18 @@ SimpleSavings <- R6Class(
         }
         
         # 3. GD Step
-        if (episode > batch_size) {
+        if (self$Buffer$withdraw$getLen() > batch_size) {
           loss_withdraw = self$loss(
-            batch_size, 
+            as.integer(batch_size),
+            self$Buffer$withdraw,
             self$DQN$withdraw$current, 
             self$DQN$withdraw$target,
             self$Optimizer$withdraw,
             self$beta
           )
           loss_deposit  = self$loss(
-            batch_size, 
+            as.integer(batch_size), 
+            self$Buffer$deposit,
             self$DQN$deposit$current, 
             self$DQN$deposit$target,
             self$Optimizer$deposit,
