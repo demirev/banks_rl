@@ -6,7 +6,7 @@ VanillaHousehold <- R6Class(
     holdings  = NULL,
     utilf     = NULL,
     
-    initialize = function(nBanks, endowment = 100, utilf = function(c) log(c)) {
+    initialize = function(nBanks, endowment = 100, utilf = function(c) sqrt(c)) {
       self$holdings <- rep(0, nBanks)
       self$cash <- self$cash + endowment
       self$endowment <- endowment
@@ -22,9 +22,9 @@ VanillaHousehold <- R6Class(
       return(utility)
     },
     
-    getInterest = function(interests) {
+    getInterest = function(interests) { 
       "Receive interest on deposits"
-      self$holdings <- self$holdings + self$hodlings * interests
+      self$cash <- self$cash + sum(self$holdings * interests)
     }
   )
 )
