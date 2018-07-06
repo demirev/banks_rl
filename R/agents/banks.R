@@ -47,14 +47,15 @@ DummyBank <- R6Class(
     act = function() {
       "Dummy bank decisions" 
       
-      loanReturns <- self$loans * rnorm(1, mean = 0.075 - 0.025*self$rating, sd = 0.01*self$rating)
+      loanReturns <- self$loans * rnorm(1, mean = 0.01 - 0.005*self$rating, sd = 0.01*self$rating)
       
       self$loans <- self$loans + loanReturns
-      if (self$loans > 0) self$reserves <- self$reserves + loanReturns
+      if (loanReturns > 0) self$reserves <- self$reserves + loanReturns
       self$capital <- self$reserves + self$loans + self$provisions - self$deposits
       
       # check if bank has become insolvent
       if (self$capital < 0) {
+        
         outcome <- 1 # bank fails
         
         # restart values
@@ -71,7 +72,7 @@ DummyBank <- R6Class(
         self$defaultCounter = self$defaultCounter + 1
       }
       
-      self$interestRate <- max(0.03 + 0.01*self$rating + rnorm(1,0,0.001*self$rating), 0.001)
+      self$interestRate <- max(0.09 + 0.01*self$rating + rnorm(1,0,0.001*self$rating), 0.001)
       
       newLoans <- self$reserves * abs(rnorm(1, mean = 0.015 + 0.005*self$rating, sd = 0.01*self$rating))
       self$reserves <- self$reserves - newLoans

@@ -3,10 +3,11 @@ VanillaHousehold <- R6Class(
   public = list(
     cash      = 0,
     endowment = 0,
+    income    = 5,
     holdings  = NULL,
     utilf     = NULL,
     
-    initialize = function(nBanks, endowment = 100, utilf = function(c) sqrt(c)) {
+    initialize = function(nBanks, endowment = 100, utilf = logUtility) {
       self$holdings <- rep(0, nBanks)
       self$cash <- self$cash + endowment
       self$endowment <- endowment
@@ -14,10 +15,9 @@ VanillaHousehold <- R6Class(
     },
     
     consume = function() {
-      "Consume available cash to get utility"
-      
+      "Consume available cash to get utility. Get Income"
       utility <- self$utilf(self$cash)
-      self$cash <- 0
+      self$cash <- self$income
       
       return(utility)
     },
