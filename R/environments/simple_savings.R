@@ -1,60 +1,20 @@
 SimpleSavings <- R6Class(
   "A Household-Bank Saving Choice Environment",
+  inherit = EconomyConstructor,
   public = list(
-    Households = list(),
-    Banks      = list(),
-    DQN        = list(),
-    Buffer     = list(),
-    Optimizer  = list(),
-    loss       = NULL,
-    beta       = 0.99,
-    reset_hhl  = list(),
-    reset_bnk  = list(),
     
-    initialize = function(
-      households, 
-      banks, 
-      dqns, 
-      lossFunction, 
-      bufferSize = 1000
-    ) {
-      self$Households <- households
-      self$Banks      <- banks
-      self$DQN        <- dqns
-      self$loss       <- lossFunction
-      
-      self$reset_hhl  <- lapply(households, function(x) x$clone())
-      self$reset_bnk  <- lapply(banks, function(x) x$clone())
-      
+    createOptimizer = function() {
+      "Initialize the optimizers"
       self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters())
       self$Optimizer$deposit  <- optim$Adam(self$DQN$deposit$current$parameters())
-      
-      self$Buffer$withdraw <- ReplayBuffer(bufferSize)
-      self$Buffer$deposit  <- ReplayBuffer(bufferSize)
-      
+      invisible(self)
     },
     
-    getInfoSet = function() {
-      "Generates a state vector for each household"
-      
-      # Get some info for each bank
-      bankStates <- lapply(
-        self$Banks,
-        function(bank) {
-          bank$getState()
-        }
-      ) %>%
-        reduce(c)
-      
-      # Combine it with the households' holdings
-      decisionStates <- lapply(
-        self$Households,
-        function(household) {
-          c(household$holdings, bankStates)
-        }
-      )
-      
-      return(decisionStates)
+    createBuffer = function(bufferSize) {
+      "Initialize the replay buffer"
+      self$Buffer$withdraw <- ReplayBuffer(bufferSize)
+      self$Buffer$deposit  <- ReplayBuffer(bufferSize)
+      invisible(self)
     },
     
     step = function(Withdrawals, Deposits) { 
@@ -104,74 +64,57 @@ SimpleSavings <- R6Class(
       
       NewStates <- self$getInfoSet()
       
+      self$updateHistory("episode")
+      
       return(list(nextState = NewStates, reward = Consumption))
       
     },
     
-    withdraw = function(Decisions) {
-      "Decreases bank balances given a list of per household withdrawals" 
-      amounts <- map2(
-        self$Households, Decisions,
-        function(household, decision) {
-          # vector with amount withdrawn from each bank
-          amount <- household$holdings * (decision == 1)
-          
-          # set withdrawals to zero
-          household$holdings[decision == 1] <- 0
-          
-          return(amount)
-        }
-      ) %>%
-        reduce(cbind) %>%
-        rowSums
-      
-      map2(
-        self$Banks, amounts,
-        function(bank, amount){
-          bank$deposits <- bank$deposits - amount
-          bank$reserves <- bank$reserves - amount
-        }
-      )
-    },
-    
-    deposit = function(Decisions) {
-      "Increases bank balances given a list of per household withdrawals" 
-      amounts <- map2(
-        self$Households, Decisions,
-        function(household, decision) {
-          # vector with amount deposited in each bank (all but one are zero)
-          res <- household$cash * (decision == 1)
-          household$holdings <- household$holdings + res
-          if (sum(decision) != 0) household$cash <- 0
-          return(res)
-        }
-      ) %>%
-        reduce(cbind) %>%
-        rowSums
-      
-      map2(
-        self$Banks, amounts,
-        function(bank, amount){
-          bank$deposits <- bank$deposits + amount
-          bank$reserves <- bank$reserves + amount
-        }
-      )
-    },
-    
-    defaults = function(bankOutcomes) {
-      "Decreases households outstanding deposits given a list of defaulted banks"
-      lapply(
+    updateHistory = function(type = "episode") {
+      # all deposits for history
+      allDeposits <- lapply(
         self$Households,
         function(household) {
-          household$holdings[bankOutcomes == 1] <- 0 # loses savings
+          household$holdings
         }
-      )
-    },
-    
-    reset = function() {
-      self$Households <- lapply(self$reset_hhl, function(x) x$clone())
-      self$Banks <- lapply(self$reset_bnk, function(x) x$clone())
-      return(self$getInfoSet())
+      ) %>%
+        reduce(cbind)
+      
+      # all cash
+      allCash <- lapply(
+        self$Households, 
+        function(household) {
+          household$cash
+        }
+      ) %>%
+        reduce(cbind)
+      
+      # all interest rates
+      allInterests <- lapply(
+        self$Banks,
+        function(bank) {
+          bank$interestRate
+        }
+      ) %>%
+        reduce(cbind)
+      
+      if (type == "episode") {
+        # update episode history
+        self$EpisodeHistory[[length(self$EpisodeHistory) + 1]] <- list(
+          deposits = allDeposits,
+          cash     = allCash,
+          interest = allInterests
+        )
+      } else if (type == "full") {
+        # add current state to full history
+        self$FullHistory[[length(self$FullHistory) + 1]] <- list(
+          deposits = allDeposits,
+          cash     = allCash,
+          interest = allInterests
+        )
+      }
+      
+      invisible(self)
     },
     
     train = function(
@@ -182,7 +125,13 @@ SimpleSavings <- R6Class(
     ) {
       "Train the networks"
       # reset the economy
-      InfoSets <- self$reset()
+      
+      Loss <- list(
+        withdraw = rep(NA, numEpisodes), 
+        deposit = rep(NA, numEpisodes)
+      )
+      
+      InfoSets <- self$reset()$getInfoSet()
       
       # train
       for (episode in 1:numEpisodes) {
@@ -222,29 +171,31 @@ SimpleSavings <- R6Class(
         )
         
         if (runif(1) <= resetProb) {
-          InfoSets <- self$reset()
+          InfoSets <- self$reset()$getInfoSet()
+          self$updateHistory("full")
+          self$EpisodeHistory <- list()
         } else {
           InfoSets <- Episode$nextState
         }
         
         # 3. GD Step
         if (self$Buffer$withdraw$getLen() > batch_size) {
-          loss_withdraw = self$loss(
+          Loss$withdraw[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$withdraw,
             self$DQN$withdraw$current, 
             self$DQN$withdraw$target,
             self$Optimizer$withdraw,
             self$beta
-          )
-          loss_deposit  = self$loss(
+          )$detach()$numpy()
+          Loss$deposit[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$deposit,
             self$DQN$deposit$current, 
             self$DQN$deposit$target,
             self$Optimizer$deposit,
             self$beta
-          )
+          )$detach()$numpy()
         }
         
         # 4. Update Target Network
@@ -253,7 +204,97 @@ SimpleSavings <- R6Class(
           update_target(self$DQN$deposit$current, self$DQN$deposit$target)
         }
         
+        cat(".")
       }
+      
+      return(Loss)
+      
+    },
+    
+    getInfoSet = function() {
+      "Generates a state vector for each household"
+      
+      # Get some info for each bank
+      bankStates <- lapply(
+        self$Banks,
+        function(bank) {
+          bank$getState()
+        }
+      ) %>%
+        reduce(c)
+      
+      # Combine it with the households' holdings
+      decisionStates <- lapply(
+        self$Households,
+        function(household) {
+          c(household$cash, household$holdings, bankStates)
+        }
+      )
+      
+      return(decisionStates)
+    },
+    
+    withdraw = function(Decisions) {
+      "Decreases bank balances given a list of per household withdrawals" 
+      amounts <- map2(
+        self$Households, Decisions,
+        function(household, decision) {
+          # vector with amount withdrawn from each bank
+          amount <- household$holdings * (decision == 1)
+          
+          # set withdrawals to zero
+          household$holdings[decision == 1] <- 0
+          
+          return(amount)
+        }
+      ) %>%
+        reduce(cbind) %>%
+        rowSums
+      
+      map2(
+        self$Banks, amounts,
+        function(bank, amount){
+          bank$deposits <- bank$deposits - amount
+          bank$reserves <- bank$reserves - amount
+        }
+      )
+
+    },
+    
+    deposit = function(Decisions) {
+      "Increases bank balances given a list of per household withdrawals" 
+      amounts <- map2(
+        self$Households, Decisions,
+        function(household, decision) {
+          # vector with amount deposited in each bank (all but one are zero)
+          res <- household$cash * (decision == 1)
+          household$holdings <- household$holdings + res
+          if (sum(decision) != 0) household$cash <- 0
+          return(res)
+        }
+      ) %>%
+        reduce(cbind) %>%
+        rowSums
+      
+      map2(
+        self$Banks, amounts,
+        function(bank, amount){
+          bank$deposits <- bank$deposits + amount
+          bank$reserves <- bank$reserves + amount
+        }
+      )
+      
+    },
+    
+    defaults = function(bankOutcomes) {
+      "Decreases households outstanding deposits given a list of defaulted banks"
+      lapply(
+        self$Households,
+        function(household) {
+          household$holdings[bankOutcomes == 1] <- 0 # loses savings
+        }
+      )
     }
+    
   )
 )

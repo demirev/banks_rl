@@ -2,6 +2,7 @@ source("R/setup.R")
 source("R/utils.R")
 source("R/agents/banks.R")
 source("R/agents/households.R")
+source("R/environments/constructor.R")
 source("R/environments/simple_savings.R")
 source_python("python/dqn.py")
 
@@ -11,18 +12,18 @@ Banks <- lapply(
 )
 
 Households <- lapply(
-  1:10,
+  1:20,
   function(i) VanillaHousehold$new(length(Banks))
 )
 
 DQNs <- list(
   withdraw = list(
-    current = DQN(24L, 4L), #$cuda(),
-    target  = DQN(24L, 4L)
+    current = DQN(25L, 4L), #$cuda(),
+    target  = DQN(25L, 4L)
   ),
   deposit = list(
-    current = DQN(24L, 4L),
-    target  = DQN(24L, 4L)
+    current = DQN(25L, 4L),
+    target  = DQN(25L, 4L)
   )
 )
 
@@ -34,4 +35,4 @@ Economy <- SimpleSavings$new(
   bufferSize = 1000L
 )
 
-Economy$train(numEpisodes = 1024)
+Economy$train(numEpisodes = 1024*4)
