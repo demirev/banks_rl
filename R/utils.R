@@ -7,3 +7,33 @@ generateEpsilon <- function(
   epsilon_final + (epsilon_start - epsilon_final) * 
     exp(-1 * frame / epsilon_decay)
 }
+
+logUtility <- function(consumptuion) {
+  utility <- log(consumptuion)
+  if (utility < -1e16) {
+    return(-1e16) # avoid -Inf
+  } else {
+    return(utility)
+  }
+}
+
+isoElasticUtilityGen <- function(Rho = 1) {
+  
+  utilF <- function(consumptuion, rho = Rho) {
+    
+    if (rho == 1) {
+      utility <- log(consumptuion)
+    } else {
+      utility <- (consumptuion^(1 - rho) - 1) / (1 - rho)
+    }
+    
+    if (utility < -1e16) {
+      return(-1e16) # avoid -Inf
+    } else {
+      return(utility)
+    }
+  }
+  
+  return(utilF)
+  
+}
