@@ -3,14 +3,15 @@ VanillaHousehold <- R6Class(
   public = list(
     cash      = 0,
     endowment = 0,
-    income    = 5,
+    income    = 0,
     holdings  = NULL,
     utilf     = NULL,
     
-    initialize = function(nBanks, endowment = 100, utilf = logUtility) {
+    initialize = function(nBanks, endowment = 100, utilf = logUtility, income = 5) {
       self$holdings <- rep(0, nBanks)
       self$cash <- self$cash + endowment
       self$endowment <- endowment
+      self$income <- income
       self$utilf <- utilf
     },
     
