@@ -78,7 +78,7 @@ SimpleInvestments <- R6Class(
       allInterests <- lapply(
         self$Banks,
         function(bank) {
-          bank$interestLoans
+          bank$loanRate
         }
       ) %>%
         reduce(cbind)

@@ -52,7 +52,7 @@ SimpleSavings <- R6Class(
       interestRates <- sapply(
         self$Banks, 
         function(bank) {
-          bank$interestRate
+          bank$depositRate
         }
       )
       lapply(
@@ -93,7 +93,7 @@ SimpleSavings <- R6Class(
       allInterests <- lapply(
         self$Banks,
         function(bank) {
-          bank$interestRate
+          bank$depositRate
         }
       ) %>%
         reduce(cbind)
