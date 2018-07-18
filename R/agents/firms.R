@@ -17,7 +17,7 @@ ProjectPool <- R6Class(
       income_sd = c(0, 33),
       terminal_income = c(0, 110),
       terminal_income_sd = c(0, 40),
-      default_prob = c(0, .75),
+      default_prob = c(0, .15),
       liquidation = c(0, 2) # as multiple of income
     ) {
       self$duration <- duration
@@ -37,6 +37,7 @@ ProjectPool <- R6Class(
         bank = NA,
         amount = runif(1, self$amount[1], self$amount[2]),
         duration = sample(size = 1, x = seq(self$duration[1], self$duration[2])),
+        principal = NA,
         interest = NA,
         payment = NA,
         outstanding = NA,
@@ -74,6 +75,7 @@ VanillaFirm <- R6Class(
         bank = numeric(0),
         amount = numeric(0),
         duration = numeric(0),
+        principal = numeric(0),
         interest = numeric(0),
         payment = numeric(0),
         outstanding = numeric(0),
@@ -166,7 +168,9 @@ VanillaFirm <- R6Class(
     payInterest = function(nBanks) {
       "Resolve project outcomes and pay back loans" 
       
-      if (nrow(self$ProjectLoans) == 0) return(rep(0,nBanks))
+      if (nrow(self$ProjectLoans) == 0) {
+        return(list(principal = rep(0,nBanks), interest = rep(0,nBanks)))
+      }
       
       # some projects default
       defaults <- runif(nrow(self$ProjectLoans)) <= self$ProjectLoans$default_prob
@@ -186,7 +190,7 @@ VanillaFirm <- R6Class(
       income[income <= 0] <- 0
       if (length(income) == 0) income <- 0
       
-      terminal <- self$ProjectLoans$duration == 0
+      terminal <- self$ProjectLoans$duration == 1
       terminal_income <- rnorm(
         sum(terminal),
         self$ProjectLoans$terminal_income[terminal],
@@ -199,23 +203,38 @@ VanillaFirm <- R6Class(
       
       self$cash <- self$cash + sum(income) + sum(terminal_income)
       
-      # loan payments are made
+      # loan payments are made (principal + interest)
       paymentsDue <- sum(self$ProjectLoans$payment)
       if (paymentsDue > self$cash) {
-        # firm defaults - cash equally split among banks, projects liquidated
+        # firm defaults - cash equally split among banks, projects liquidated #
+        
+        # total residual payments
         payments <- self$ProjectLoans %>%
           group_by(bank) %>%
-          summarise(payment = sum(liquidation*amount)) %>%
+          summarise(payment = sum(liquidation * income)) %>%
           mutate(payment = payment + self$cash/nrow(.)) %>%
           right_join(tibble(bank = 1:nBanks), by = "bank") %>%
           select(payment) %>%
           t %>%
           as.numeric
         
+        # principal to be written off banks' balance sheets
+        principal <- self$ProjectLoans %>%
+          group_by(bank) %>%
+          summarise(principal = sum(principal * duration)) %>% # what's left
+          right_join(tibble(bank = 1:nBanks), by = "bank") %>%
+          select(principal) %>%
+          t %>%
+          as.numeric # this is not a payment - just a write off
+        
+        # reduce cash
         self$cash <- 0
         self$ProjectLoans <- self$ProjectLoans[0, ]
+        
       } else {
-        # firm repay
+        # firm repays #
+        
+        # total payment
         payments <- self$ProjectLoans %>%
           group_by(bank) %>%
           summarise(payment = sum(payment)) %>%
@@ -224,6 +243,16 @@ VanillaFirm <- R6Class(
           t %>%
           as.numeric
         
+        # the part of the repayment attributable to the principal is calculated
+        principal <- self$ProjectLoans %>%
+          group_by(bank) %>%
+          summarise(principal = sum(principal)) %>% # equal installments
+          right_join(tibble(bank = 1:nBanks), by = "bank") %>%
+          select(principal) %>%
+          t %>%
+          as.numeric
+        
+        # reduce cash
         self$cash <- self$cash - sum(na.omit(payments))
         self$ProjectLoans <- self$ProjectLoans %>%
           filter(!terminal) %>%
@@ -232,7 +261,8 @@ VanillaFirm <- R6Class(
       }
       
       payments[is.na(payments)] <- 0
-      return(payments)
+      principal[is.na(principal)] <- 0
+      return(list(principal = principal, interest = payments - principal))
     },
     
     invest = function(investmentDecision) { 
@@ -247,7 +277,8 @@ VanillaFirm <- R6Class(
             mutate(
               bank = -1, # no bank
               outstanding = 0,
-              payment = 0
+              payment = 0,
+              principal = 0
             )
           self$ProjectLoans <- bind_rows(
             self$ProjectLoans,
@@ -278,7 +309,8 @@ VanillaFirm <- R6Class(
             bank = bankId,
             outstanding = (amount * (1 + bankDecision)^duration),
             interest = bankDecision,
-            payment = outstanding / duration
+            payment = outstanding / duration,
+            principal = amount / duration
           )
         
         self$ProjectLoans <- bind_rows(
