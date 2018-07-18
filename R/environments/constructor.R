@@ -60,9 +60,15 @@ EconomyConstructor <- R6Class(
     },
     
     reset = function() {
-      self$Households <- lapply(self$reset_hhl, function(x) x$clone())
-      self$Banks <- lapply(self$reset_bnk, function(x) x$clone())
-      self$Firms <- lapply(self$reset_frm, function(x) x$clone())
+      self$Households <- self$reset_hhl %>%
+        sample(length(self$reset_hhl)) %>%
+        lapply(function(x) x$clone())
+      self$Banks <- self$reset_bnk  %>%
+        sample(length(self$reset_bnk)) %>%
+        lapply(function(x) x$clone())
+      self$Firms <- self$reset_frm  %>%
+        sample(length(self$reset_frm)) %>%
+        lapply(function(x) x$clone())
       invisible(self)
     },
     
@@ -70,7 +76,8 @@ EconomyConstructor <- R6Class(
       numEpisodes = 10000,
       resetProb = 0.001, 
       batch_size = 256,
-      updateFreq = 200
+      updateFreq = 200,
+      verbose = 0
     ) {
       "Train the networks"
       invisible(self)
