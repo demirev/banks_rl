@@ -65,38 +65,33 @@ SimpleInvestments <- R6Class(
       ) %>%
         reduce(rbind)
       
-      # all cash
-      allCash <- lapply(
-        self$Firms, 
-        function(firm) {
-          firm$cash
-        }
-      ) %>%
-        reduce(cbind)
-      
-      # all interest rates
-      allInterests <- lapply(
+      # bank details
+      bankBalances <- lapply(
         self$Banks,
         function(bank) {
-          bank$loanRate
+          tibble(
+            type = bank$rating,
+            depositRate = bank$depositRate,
+            loanRate = bank$loanRate,
+            defaultCounter = bank$defaultCounter,
+            deposits = bank$deposits,
+            loans = bank$loans,
+            reserves = bank$reserves,
+            capital = bank$capital
+          )
         }
       ) %>%
-        reduce(cbind)
+        reduce(rbind)
       
       if (type == "episode") {
         # update episode history
         self$EpisodeHistory[[length(self$EpisodeHistory) + 1]] <- list(
           projects = allProjects,
-          cash     = allCash,
-          interest = allInterests
+          banks    = bankBalances
         )
       } else if (type == "full") {
         # add current state to full history
-        self$FullHistory[[length(self$FullHistory) + 1]] <- list(
-          projects = allProjects,
-          cash     = allCash,
-          interest = allInterests
-        )
+        self$FullHistory[[length(self$FullHistory) + 1]] <- self$EpisodeHistory
       }
       
       return(T)
@@ -106,7 +101,8 @@ SimpleInvestments <- R6Class(
       numEpisodes = 10000, 
       resetProb = 0.001, 
       batch_size = 256,
-      updateFreq = 200
+      updateFreq = 200,
+      verbose = 0
     ) {
       "Train the networks"
       # reset the economy
@@ -189,7 +185,11 @@ SimpleInvestments <- R6Class(
           update_target(self$DQN$borrow$current, self$DQN$borrow$target)
         }
         
-        cat(".")
+        if (verbose == 1) {
+          cat(".")
+        } else if (verbose == 2) {
+          print(self$EpisodeHistory[[length(self$EpisodeHistory)]])
+        }
       }
       
       return(Loss)
@@ -227,15 +227,26 @@ SimpleInvestments <- R6Class(
         function(firm) {
           firm$payInterest(nBanks = length(self$Banks))
         }
+      )
+       
+      principal <- lapply(
+        repayments, 
+        function(repayment) repayment$principal
       ) %>%
         reduce(cbind) %>%
         rowSums
+      interest <- lapply(
+        repayments, 
+        function(repayment) repayment$interest
+      ) %>%
+        reduce(cbind) %>%
+        rowSums 
       
-      map2(
-        self$Banks, repayments,
-        function(bank, amount){
-          bank$loans    <- bank$loans - amount
-          bank$reserves <- bank$reserves + amount
+      pmap(
+        list(self$Banks, principal, interest),
+        function(bank, principal, interest) {
+          bank$loans    <- bank$loans - principal
+          bank$reserves <- bank$reserves + principal + interest
         }
       )
       

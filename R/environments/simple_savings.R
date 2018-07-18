@@ -89,29 +89,35 @@ SimpleSavings <- R6Class(
       ) %>%
         reduce(cbind)
       
-      # all interest rates
-      allInterests <- lapply(
+      
+      # bank details
+      bankBalances <- lapply(
         self$Banks,
         function(bank) {
-          bank$depositRate
+          tibble(
+            type = bank$rating,
+            depositRate = bank$depositRate,
+            #loanRate = bank$loanRate,
+            defaultCounter = bank$defaultCounter,
+            deposits = bank$deposits,
+            loans = bank$loans,
+            reserves = bank$reserves,
+            capital = bank$capital
+          )
         }
       ) %>%
-        reduce(cbind)
+        reduce(rbind)
       
       if (type == "episode") {
         # update episode history
         self$EpisodeHistory[[length(self$EpisodeHistory) + 1]] <- list(
           deposits = allDeposits,
           cash     = allCash,
-          interest = allInterests
+          banks    = bankBalances
         )
       } else if (type == "full") {
         # add current state to full history
-        self$FullHistory[[length(self$FullHistory) + 1]] <- list(
-          deposits = allDeposits,
-          cash     = allCash,
-          interest = allInterests
-        )
+        self$FullHistory[[length(self$FullHistory) + 1]] <- self$EpsiodeHistory
       }
       
       invisible(self)
@@ -121,7 +127,8 @@ SimpleSavings <- R6Class(
       numEpisodes = 10000,
       resetProb = 0.001, 
       batch_size = 256,
-      updateFreq = 200
+      updateFreq = 200,
+      verbose = 0
     ) {
       "Train the networks"
       # reset the economy
@@ -204,7 +211,11 @@ SimpleSavings <- R6Class(
           update_target(self$DQN$deposit$current, self$DQN$deposit$target)
         }
         
-        cat(".")
+        if (verbose == 1) {
+          cat(".")
+        } else if (verbose == 2) {
+          print(self$EpisodeHistory[[length(self$EpisodeHistory)]])
+        }
       }
       
       return(Loss)
