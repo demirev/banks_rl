@@ -30,15 +30,15 @@ class ReplayBuffer(object):
         return len(self.buffer)
         
 class DQN(nn.Module):
-    def __init__(self, num_inputs, num_actions):
+    def __init__(self, num_inputs, num_actions, num_hidden = 128, num_hidden1 = 128):
         super(DQN, self).__init__()
         
         self.layers = nn.Sequential(
-            nn.Linear(num_inputs, 128),
+            nn.Linear(num_inputs, num_hidden),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(num_hidden, num_hidden1),
             nn.ReLU(),
-            nn.Linear(128, num_actions)
+            nn.Linear(num_hidden1, num_actions)
         )
         
         self.outsize = num_actions
