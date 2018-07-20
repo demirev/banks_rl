@@ -11,12 +11,12 @@ ProjectPool <- R6Class(
     liquidation = NULL,
     
     initialize = function(
-      duration = c(3,10),
-      amount   = c(100, 600),
-      income   = c(0, 100),
-      income_sd = c(0, 33),
-      terminal_income = c(0, 110),
-      terminal_income_sd = c(0, 40),
+      duration = c(10,20),
+      amount   = c(3, 9),
+      income   = c(0, 1),
+      income_sd = c(0, 3),
+      terminal_income = c(0, 1.1),
+      terminal_income_sd = c(0, 0.4),
       default_prob = c(0, .15),
       liquidation = c(0, 2) # as multiple of income
     ) {
@@ -181,7 +181,7 @@ VanillaFirm <- R6Class(
       self$ProjectLoans$liquidation[defaults] <- 0
       
       # income is received (both ongoing and terminal)
-      ongoing <- self$ProjectLoans$duration > 0
+      ongoing <- self$ProjectLoans$duration > 1
       income <- rnorm(
         sum(ongoing), 
         self$ProjectLoans$income[ongoing],
@@ -317,6 +317,7 @@ VanillaFirm <- R6Class(
           self$ProjectLoans,
           self$application
         )
+        
       }
       self$application <- NULL
     },
@@ -326,6 +327,7 @@ VanillaFirm <- R6Class(
       defaults <- self$ProjectLoans$bank %in% which(as.logical(bankOutcomes))
       self$ProjectLoans$outstanding[defaults] <- 0
       self$ProjectLoans$payment[defaults] <- 0
+      self$ProjectLoans$principal[defaults] <- 0
     }
     
   )

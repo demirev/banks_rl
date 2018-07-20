@@ -117,7 +117,7 @@ SimpleSavings <- R6Class(
         )
       } else if (type == "full") {
         # add current state to full history
-        self$FullHistory[[length(self$FullHistory) + 1]] <- self$EpsiodeHistory
+        self$FullHistory[[length(self$FullHistory) + 1]] <- self$EpisodeHistory
       }
       
       invisible(self)

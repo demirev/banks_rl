@@ -17,9 +17,9 @@ Banks_S1 <- lapply(
       rating = 1, 
       fixedInterest = T,
       deposits = 0,
-      loans = 300,
+      loans = 400,
       capital = 500,
-      reserves = 200,
+      reserves = 100,
       provisions = 0
     )
   }
@@ -63,9 +63,9 @@ Banks_S2 <- lapply(
       rating = rat, 
       fixedInterest = T,
       deposits = 0,
-      loans = 300,
+      loans = 400,
       capital = 500,
-      reserves = 200,
+      reserves = 100,
       provisions = 0
     )
   }

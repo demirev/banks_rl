@@ -148,7 +148,7 @@ DummyBankInv <- R6Class(
       self$reserves <- self$reserves - depositPayments
       
       # receive new deposits (inflow or outflow)
-      newDeposits <- self$deposits * rnorm(1, mean = 0.015 - 0.005*self$rating, sd = 0.01*self$rating)
+      newDeposits <- self$deposits * rnorm(1, mean = 0.025 - 0.005*self$rating, sd = 0.01*self$rating)
       if (newDeposits < -self$deposits) newDeposits <- -self$deposits
       
       self$reserves <- self$reserves + newDeposits

@@ -9,14 +9,14 @@ source_python("python/dqn.py")
 # Exp I1 ------------------------------------------------------------------
 # 5 banks, same rating, one with lower interest rates; 50 firms
 Banks_I1 <- lapply(
-  c(0.07, rep(0.14, 4)), 
+  c(0.07, rep(0.21, 4)), 
   function(int) DummyBankInv$new(rating = 1, loanRate = int, fixedInterest = T)
 )
 
 Firms_I1 <- lapply(
   1:50,
   function(i) {
-    VanillaFirm$new(nBanks = length(Banks_I1), endowment = 100, utilf = logUtility)
+    VanillaFirm$new(nBanks = length(Banks_I1), endowment = 10, utilf = logUtility)
   }
 )
 
@@ -39,7 +39,7 @@ Economy_I1 <- SimpleInvestments$new(
   bufferSize = 1000L
 )
 
-Economy_I1$train(numEpisodes = 1024*2, resetProb = 0.008, verbose = 1)
+Economy_I1$train(numEpisodes = 1024*6, resetProb = 0.004, verbose = 1)
 
 # Exp I2 ------------------------------------------------------------------
 # 5 banks, one bad rating, same interest; 50 firms
@@ -51,7 +51,7 @@ Banks_I2 <- lapply(
 Firms_I2 <- lapply(
   1:50,
   function(i) {
-    VanillaFirm$new(nBanks = length(Banks_I2), endowment = 100, utilf = logUtility)
+    VanillaFirm$new(nBanks = length(Banks_I2), endowment = 10, utilf = logUtility)
   }
 )
 
@@ -74,6 +74,6 @@ Economy_I2 <- SimpleInvestments$new(
   bufferSize = 1000L
 )
 
-Economy_I2$train(numEpisodes = 1024*2, resetProb = 0.008, verbose = 1)
+Economy_I2$train(numEpisodes = 1024*6, resetProb = 0.004, verbose = 1)
 
 save(list = c("Economy_I1", "Economy_I2"), file = "R/experiments/investments.RData")
