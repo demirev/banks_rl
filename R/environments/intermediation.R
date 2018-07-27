@@ -56,6 +56,14 @@ Intermediation <- R6Class(
         }
       )
       
+      # 3. Bank management gets excess capital as a reward
+      Rewards$Banks <- map(
+        self$Banks,
+        function(bank) {
+          bank$consume()
+        }
+      )
+      
       invisible(self)
     },
     
@@ -72,7 +80,7 @@ Intermediation <- R6Class(
       self$firmsInvest(Investments)
       
       # 3. firms consume whatever is not invested
-      Consumption <- lapply(
+      Rewards$Firms <- map(
         self$Firms,
         function(firm) {
           firm$consume()
@@ -96,7 +104,7 @@ Intermediation <- R6Class(
       self$householdsDeposit(Deposits)
       
       # 3. Households consume whatever is not deposited
-      Consumption <- lapply(
+      Rewards$Households <- map(
         self$Households,
         function(household) {
           household$consume()
@@ -160,6 +168,14 @@ Intermediation <- R6Class(
       }
       
       return(T)
+    },
+    
+    reset = function() {
+      "Resets the economy"
+      super$reset()
+      self$InfoSets = list(Bank = list(), Households = list(), Firms = list())
+      self$OldInfoSets = list(Bank = list(), Households = list(), Firms = list())
+      self$Rewards = list(Bank = list(), Households = list(), Firms = list())
     },
     
     train = function(
