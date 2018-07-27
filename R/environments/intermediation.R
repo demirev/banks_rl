@@ -3,6 +3,10 @@ Intermediation <- R6Class(
   inherit = EconomyConstructor,
   public = list(
     
+    InfoSets = list(Bank = list(), Households = list(), Firms = list()),
+    OldInfoSets = list(Bank = list(), Households = list(), Firms = list()),
+    Rewards = list(Bank = list(), Households = list(), Firms = list()),
+    
     createOptimizer = function() {
       "Initialize the optimizers"
       self$Optimizer$invest <- optim$Adam(self$DQN$invest$current$parameters())
@@ -11,7 +15,7 @@ Intermediation <- R6Class(
       self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters())
       self$Optimizer$loanrate <- optim$Adam(self$DQN$loanrate$current$parameters())
       self$Optimizer$depositrate <- optim$Adam(self$DQN$depositrate$current$parameters())
-      self$Optimizer$approve <- optim$Adam(self$DQN$approve$current$parameters())
+      self$Optimizer$approverate <- optim$Adam(self$DQN$approverate$current$parameters())
       invisible(self)
     },
     
@@ -23,11 +27,11 @@ Intermediation <- R6Class(
       self$Buffer$withdraw <- ReplayBuffer(bufferSize)
       self$Buffer$loanrate <- ReplayBuffer(bufferSize)
       self$Buffer$depositrate <- ReplayBuffer(bufferSize)
-      self$Buffer$approve <- ReplayBuffer(bufferSize)
+      self$Buffer$approverate <- ReplayBuffer(bufferSize)
       invisible(self)
     },
     
-    stepBank = function(Approvals, LoanChanges, DepositChanges) {
+    stepBank = function(ApproveChanges, LoanChanges, DepositChanges) {
       "Steps through banks' actions"
       
       # 0. Check for defaults
@@ -40,14 +44,15 @@ Intermediation <- R6Class(
       self$bankDefaults(bankOutcomes)
       
       # 1. Approve loans
-      self$processLoans(Approvals)
+      self$processLoans()
       
       # 2. Adjust interest on deposits and loans
       pmap(
-        list(self$Banks, LoanChanges, DepositChanges),
-        function(bank, loanChange, depositChange) {
+        list(self$Banks, LoanChanges, DepositChanges, ApproveChanges),
+        function(bank, loanChange, depositChange, approveChange) {
           bank$adjustLoans(loanChange)
           bank$adjustDeposits(depositChange)
+          bank$adjustApprovals(approveChange)
         }
       )
       
@@ -102,7 +107,7 @@ Intermediation <- R6Class(
       interestRates <- sapply(
         self$Banks, 
         function(bank) {
-          bank$depositRate
+          bank$payDeposits()
         }
       )
       lapply(
@@ -169,7 +174,12 @@ Intermediation <- R6Class(
       
       Loss <- list(
         invest = rep(NA, numEpisodes), 
-        borrow = rep(NA, numEpisodes)
+        borrow = rep(NA, numEpisodes),
+        deposit = rep(NA, numEpisodes),
+        withdraw = rep(NA, numEpisodes),
+        loanrate = rep(NA, numEpisodes),
+        depositrate = rep(NA, numEpisodes),
+        approve = rep(NA, numEpisodes)
       )
       
       resetFlag <- T
@@ -184,20 +194,21 @@ Intermediation <- R6Class(
         # 1. Banks act ----
         
         # 1.0 Update Info Set
+        self$getInfoSet("Banks")
         
         # 1.1 Update buffer
         if (!resetFlag) {
           pmap(
             list(
               self$OldInfoSets$Banks, 
-              Approvals, 
+              ApproveChanges, 
               LoanChanges, 
               DepositChanges,
               self$Rewards$Banks, 
               self$InfoSets$Banks
             ), 
             function(state, action_a, action_l, action_d, reward, next_state) {
-              self$Buffer$approve$push(state, which.max(action_a) - 1L, reward, next_state)
+              self$Buffer$approverate$push(state, which.max(action_a) - 1L, reward, next_state)
               self$Buffer$loanrate$push(state, which.max(action_l) - 1L, reward, next_state)
               self$Buffer$depositrate$push(state, which.max(action_d) - 1L, reward, next_state)
             }
@@ -205,10 +216,10 @@ Intermediation <- R6Class(
         }
         
         # 1.2 Make decisions
-        Approvals <- lapply(
+        ApproveChanges <- lapply(
           self$InfoSets$Banks, 
           function(info) {
-            decision <- self$DQN$approve$current$act(info, epsilon)
+            decision <- self$DQN$approverate$current$act(info, epsilon)
             return(decision)
           }
         )
@@ -227,11 +238,12 @@ Intermediation <- R6Class(
         )
         
         # 1.3 Interact with economy
-        self$stepBank(Approvals, LoanChanges, DepositChanges)
+        self$stepBank(ApproveChanges, LoanChanges, DepositChanges)
         
         # 2. Firms act ----
         
         # 2.0 Update Info Set
+        self$getInfoSet("Firms")
         
         # 2.1 Update buffer
         if (!resetFlag) {
@@ -276,6 +288,7 @@ Intermediation <- R6Class(
         # 3. Households act ----
         
         # 3.0 Update Info Set
+        self$getInfoSet("Households")
         
         # 3.1 Update buffer
         if (!resetFlag) {
@@ -377,12 +390,12 @@ Intermediation <- R6Class(
             self$Optimizer$depositrate,
             self$beta
           )$detach()$numpy()
-          Loss$approve[episode] <- self$loss(
+          Loss$approverate[episode] <- self$loss(
             as.integer(batch_size),
-            self$Buffer$approve,
-            self$DQN$approve$current, 
-            self$DQN$approve$target,
-            self$Optimizer$approve,
+            self$Buffer$approverate,
+            self$DQN$approverate$current, 
+            self$DQN$approverate$target,
+            self$Optimizer$approverate,
             self$beta
           )$detach()$numpy()
         }
@@ -395,7 +408,7 @@ Intermediation <- R6Class(
           update_target(self$DQN$withdraw$current, self$DQN$withdraw$target)
           update_target(self$DQN$loanrate$current, self$DQN$loanrate$target)
           update_target(self$DQN$depositrate$current, self$DQN$depositrate$target)
-          update_target(self$DQN$approve$current, self$DQN$approve$target)
+          update_target(self$DQN$approverate$current, self$DQN$approverate$target)
         }
         
         if (verbose == 1) {
@@ -409,27 +422,73 @@ Intermediation <- R6Class(
       
     },
     
-    getInfoSet = function() {
-      "Generates a state vector for each household"
+    getInfoSet = function(type = "Banks") {
+      "Generates a state vector for each agent"
       
-      # Get some info for each bank
-      bankStates <- lapply(
-        self$Banks,
-        function(bank) {
-          bank$getState()
-        }
-      ) %>%
-        reduce(c)
+      if (type == "Banks") {
+        self$OldInfoSets$Banks <- self$InfoSets$Banks
+        
+        # Aggregate economy state
+        # TO DO
+        
+        self$InfoSets$Banks <- map(
+          self$Banks,
+          function(bank) {
+            bank$getState()
+          }
+        )
+        
+      } else if (type == "Firms") {
+        self$OldInfoSets$Firms <- self$InfoSets$Firms
+        
+        # Get aggregate economy state
+        # TO DO
+        
+        # Get some info for each bank
+        bankStates <- map(
+          self$Banks,
+          function(bank) {
+            bank$getState()
+          }
+        ) %>%
+          reduce(c)
+        
+        # Combine it with the firm's holdings
+        self$InfoSets$Firms <- map(
+          self$Firms,
+          function(firm) {
+            c(bankStates, firm$getState())
+          }
+        )
+        
+      } else if (type == "Households") {
+        self$OldInfoSets$Households <- self$InfoSets$Households
+        
+        # Get aggregate economy state
+        # TO DO
+        
+        # Get some info for each bank
+        bankStates <- map(
+          self$Banks,
+          function(bank) {
+            bank$getState()
+          }
+        ) %>%
+          reduce(c)
+        
+        # Combine it with the household's state
+        self$InfoSets$Households <- map(
+          self$Households,
+          function(household) {
+            c(bankStates, household$getState())
+          }
+        )
+        
+      } else {
+        stop("Wrong type")
+      }
       
-      # Combine it with the firm's holdings
-      decisionStates <- lapply(
-        self$Firms,
-        function(firm) {
-          c(bankStates, firm$getState())
-        }
-      )
-      
-      return(decisionStates)
+      invisible(self)
     },
     
     produce = function() {
@@ -494,16 +553,28 @@ Intermediation <- R6Class(
       invisible(self) 
     },
     
-    processLoans = function(Approvals) {
+    processLoans = function() {
       "Approves or rejects loans"
       
-      # initiate approved projects
-      pmap(
-        list(self$Firms, Approvals),
-        function(firm, decision) {
-          firm$rollProject(decision)
-        }
-      )
+      # Crate a vector of accept / reject decisions for each application
+      Decisions <- self$Firms %>% 
+        map(
+          function(firm) {
+            application <- firm$application
+            if (application$bank != -1) {
+              decision <- self$Banks[[application$bank]]$process(application)
+              firm$rollProject(decision)
+            } else {
+              firm$rollProject(1) # no loan required
+            }
+          }
+        )
+      
+      # clean banks' queued loan applications
+      self$Banks %>%
+        map(function(bank) {
+          bank$applications <- tibble()
+        })
       
       invisible(self)
     },   
@@ -543,13 +614,31 @@ Intermediation <- R6Class(
     
     firmsApply = function(Borrowings) {
       "Firms choose to which bank (if any) to apply for a loan"
+      
+      # firms assign a bank id to their projects
       map2(
         self$Firms, Borrowings,
         function(firm, decision) {
-          # 1 is invest, 0 discard
           firm$borrow(decision)
         }
       )
+      
+      # aggregate projects applications to add to bank queues
+      Applications <- self$Firms %>% 
+        map("application") %>%
+        reduce(rbind) %>%
+        split(.$bank) %>%
+        arrange(bank) %>%
+        right_join(tibble(bank = 1:length(self$Banks)))
+      
+      # add to bank queue
+      self$Banks %>%
+        map2(
+          Applications, 
+          function(bank, applications) {
+            bank$applications <- applications
+          }
+        )
       
       invisible(self)
     },
