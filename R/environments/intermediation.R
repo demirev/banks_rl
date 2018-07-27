@@ -7,6 +7,11 @@ Intermediation <- R6Class(
       "Initialize the optimizers"
       self$Optimizer$invest <- optim$Adam(self$DQN$invest$current$parameters())
       self$Optimizer$borrow <- optim$Adam(self$DQN$borrow$current$parameters())
+      self$Optimizer$deposit <- optim$Adam(self$DQN$deposit$current$parameters())
+      self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters())
+      self$Optimizer$loanrate <- optim$Adam(self$DQN$loanrate$current$parameters())
+      self$Optimizer$depositrate <- optim$Adam(self$DQN$depositrate$current$parameters())
+      self$Optimizer$approve <- optim$Adam(self$DQN$approve$current$parameters())
       invisible(self)
     },
     
@@ -14,7 +19,7 @@ Intermediation <- R6Class(
       "Initialize the replay buffer"
       self$Buffer$invest <- ReplayBuffer(bufferSize)
       self$Buffer$borrow <- ReplayBuffer(bufferSize)
-      self$Buffer$depost <- ReplayBuffer(bufferSize)
+      self$Buffer$deposit <- ReplayBuffer(bufferSize)
       self$Buffer$withdraw <- ReplayBuffer(bufferSize)
       self$Buffer$loanrate <- ReplayBuffer(bufferSize)
       self$Buffer$depositrate <- ReplayBuffer(bufferSize)
@@ -26,25 +31,40 @@ Intermediation <- R6Class(
       "Steps through banks' actions"
       
       # 0. Check for defaults
+      bankOutcomes <- lapply(
+        self$Banks,
+        function(bank) {
+          bank$isDefault() # dummy actions by each bank
+        }
+      )
+      self$bankDefaults(bankOutcomes)
       
       # 1. Approve loans
+      self$processLoans(Approvals)
       
-      # 2. Adjust interest on deposits
+      # 2. Adjust interest on deposits and loans
+      pmap(
+        list(self$Banks, LoanChanges, DepositChanges),
+        function(bank, loanChange, depositChange) {
+          bank$adjustLoans(loanChange)
+          bank$adjustDeposits(depositChange)
+        }
+      )
       
-      # 3. Adjust interest on loans
+      invisible(self)
     },
     
     stepFirm = function(Investments, Borrowings) { 
       "Steps through firms' actions"
       
       # 0. Interest is paid
-      self$repay()
+      self$firmsRepay()
       
       # 1. each firm applies for loans for their current investment
-      self$processLoans(Borrowings)
+      self$firmsApply(Borrowings)
       
       # 2. each firm keeps or discards their current opportunity
-      self$invest(Investments)
+      self$firmsInvest(Investments)
       
       # 3. firms consume whatever is not invested
       Consumption <- lapply(
@@ -65,10 +85,10 @@ Intermediation <- R6Class(
       Deposits    <- lapply(Deposits, function(x) x[-length(x)])
       
       # 1. each bank loses withdrawn money
-      self$withdraw(Withdrawals)
+      self$householdsWithdraw(Withdrawals)
       
       # 2. each customer deposits (or not) their savings
-      self$deposit(Deposits)
+      self$householdsDeposit(Deposits)
       
       # 3. Households consume whatever is not deposited
       Consumption <- lapply(
@@ -156,9 +176,10 @@ Intermediation <- R6Class(
       
       # train
       for (episode in 1:numEpisodes) {
-        
-        # 0. set exploration rate
         epsilon <- generateEpsilon(episode)
+        
+        # 0. Productions takes place
+        self$produce()
         
         # 1. Banks act ----
         
@@ -411,8 +432,83 @@ Intermediation <- R6Class(
       return(decisionStates)
     },
     
+    produce = function() {
+      "Production takes place"
+      
+      # aggregate inputs
+      capital <- self$Firms %>%
+        map("capital") %>%
+        reduce(sum)
+      
+      labor <- self$Households %>%
+        map("labor") %>%
+        reduce(sum)
+      
+      # carry out production
+      self$ProductionFunction$shock()
+      
+      output <- self$ProductionFunction$produce(capital, labor)
+      wage <- self$ProductionFunction$wage(capital, labor)
+      rate <- self$ProductionFunction$rate(capital, labor)
+      
+      # give out factor products (and depreciate)
+      self$Households %>%
+        map(function(houshold) {
+          household$cash <- household$cash + household$labor * wage
+        })
+      
+      self$Firms %>%
+        map(function(firm) {
+          firm$cash <- firm$cash + firm$capital * rate
+          firm$capital <- firm$capital * (1 - self$depreciation)
+        })
+      
+    },
     
-    repay = function() {
+    bankDefaults = function(Outcomes) {
+      "Resolves pottential bank defaults"
+      
+      # reset bank balances
+      self$Banks %>%
+        filter(Outcomes) %>% # 1 is default
+        map(function(bank) {
+          bank$default()
+        })
+      
+      # reduce housholds' deposits
+      self$Households %>%
+        map(
+          function(household) {
+            household$holdings[Outcomes == 1] <- 0 # loses savings
+          }
+        )
+      
+      # reduce firms' borrowing
+      self$Firms %>%
+        map(
+          function(firm) {
+            firm$bankDefaults(Outcomes == 1)
+          }
+        )
+      
+      invisible(self) 
+    },
+    
+    processLoans = function(Approvals) {
+      "Approves or rejects loans"
+      
+      # initiate approved projects
+      pmap(
+        list(self$Firms, Approvals),
+        function(firm, decision) {
+          firm$rollProject(decision)
+        }
+      )
+      
+      invisible(self)
+    },   
+    
+    firmsRepay = function() {
       "Loan Payments from Firms to Banks"
       repayments <- lapply(
         self$Firms,
@@ -445,63 +541,83 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    processLoans = function(Borrowings) {  
-      "Banks decide whether to accept or reject a loan" 
-      
-      # gather all project info in one list
-      Applications <- lapply(
-        self$Firms,
-        function(firm) {
-          firm$application
+    firmsApply = function(Borrowings) {
+      "Firms choose to which bank (if any) to apply for a loan"
+      map2(
+        self$Firms, Borrowings,
+        function(firm, decision) {
+          # 1 is invest, 0 discard
+          firm$borrow(decision)
         }
       )
       
-      # create a vector of accept / reject decisions and adjust bank balances
-      Decisions <- map2(
-        Borrowings, Applications,
-        function(borrowing, application) {
-          if (borrowing[length(borrowing)] == 1) {
-            # last index is no loan
-            return(0)
-          } else {
-            bankIndex <- which(borrowing == 1)
-            return(self$Banks[[bankIndex]]$process(application))
-          }
-        }
-      )
-      
-      # initiate approved projects
-      pmap(
-        list(self$Firms, Decisions, Borrowings),
-        function(firm, decision, bankId) {
-          firm$rollProject(decision, which(bankId == 1))
-        }
-      )
-      
-      return(self)
-      
+      invisible(self)
     },
     
-    invest = function(Investments) {
+    firmsInvest = function(Investments) {
       "Firms decide whether to invest in a project or discard it" 
-      amounts <- map2(
+      map2(
         self$Firms, Investments,
         function(firm, decision) {
           # 1 is invest, 0 discard
           firm$invest(decision)
         }
-      ) 
+      )
+      
+      invisible(self)
     },
     
-    defaults = function(bankOutcomes) {
-      "Decreases households outstanding deposits given a list of defaulted banks"
-      lapply(
-        self$Firms,
-        function(firm) {
-          firm$bankDefault(bankOutcomes)
+    householdsWithdraw = function(Withdrawals) {
+      "Households withdraw some of their deposits"
+      Amounts <- map2(
+        self$Households, Withdrawals,
+        function(household, decision) {
+          # vector with amount withdrawn from each bank
+          amount <- household$holdings * (decision == 1)
+          
+          # set withdrawals to zero
+          household$holdings[decision == 1] <- 0
+          
+          return(amount)
+        }
+      ) %>%
+        reduce(cbind) %>%
+        rowSums
+      
+      map2(
+        self$Banks, Amounts,
+        function(bank, amount){
+          bank$deposits <- bank$deposits - amount
+          bank$reserves <- bank$reserves - amount
+        }
+      )
+    },
+    
+    householdsDeposit = function(Deposits) {
+      "Households deposit their cash"
+      
+      Amounts <- map2(
+        self$Households, Deposits,
+        function(household, decision) {
+          # vector with amount deposited in each bank (all but one are zero)
+          res <- household$cash * (decision == 1)
+          household$holdings <- household$holdings + res
+          if (sum(decision) != 0) household$cash <- 0
+          return(res)
+        }
+      ) %>%
+        reduce(cbind) %>%
+        rowSums
+      
+      map2(
+        self$Banks, Amounts,
+        function(bank, amount){
+          bank$deposits <- bank$deposits + amount
+          bank$reserves <- bank$reserves + amount
         }
       )
     }
+    
     
   )
 )
