@@ -431,7 +431,7 @@ Bank <- R6Class(
       self$reserves <- self$reserves - payment
       self$capital  <- self$capital - payment
       
-      return(list(depositRate = self$depositRate, distress = max(1, distress)))
+      return(self$depositRate * distress)
     },
     
     payWithdrawal = function(amount) {

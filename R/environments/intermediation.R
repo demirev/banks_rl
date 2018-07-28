@@ -575,7 +575,6 @@ Intermediation <- R6Class(
       self$Households %>%
         map(function(houshold) {
           household$receiveWage(self$wage)
-          #household$cash <- household$cash + household$labor * self$wage
         })
       
       self$Firms %>%
@@ -600,7 +599,6 @@ Intermediation <- R6Class(
         map(
           function(household) {
             household$bankDefaults(Outcomes == 1)
-            #household$holdings[Outcomes == 1] <- 0 # loses savings
           }
         )
       
@@ -731,10 +729,6 @@ Intermediation <- R6Class(
         self$Households, Withdrawals,
         function(household, decision) {
           household$requestWithdrawal(decision)
-          # vector with amount withdrawn from each bank
-          #amount <- household$holdings * (decision == 1)
-          
-          #return(amount)
         }
       ) %>%
         reduce(cbind) %>%
@@ -752,11 +746,6 @@ Intermediation <- R6Class(
         self$Households, Withdrawals,
         function(household, decision) {
           household$receiveWithdrawal(decision, AmountsPaid)
-          # vector with amount withdrawn from each bank
-          #amount <- household$holdings * (decision == 1) * AmountsPaid
-          #household$cash <- household$cash + sum(amount)
-          # set withdrawals to zero
-          #household$holdings[decision == 1] <- 0
         }
       )
       
@@ -770,10 +759,6 @@ Intermediation <- R6Class(
         function(household, decision) {
           # vector with amount deposited in each bank (all but one are zero)
           household$deposit(decision)
-          #res <- household$cash * (decision == 1)
-          #household$holdings <- household$holdings + res
-          #if (sum(decision) != 0) household$cash <- 0
-          #return(res)
         }
       ) %>%
         reduce(cbind) %>%
