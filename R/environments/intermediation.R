@@ -96,16 +96,19 @@ Intermediation <- R6Class(
     stepFirm = function(Investments, Borrowings) { 
       "Steps through firms' actions"
       
-      # 0. Interest is paid
+      # 0. Projects give capital or default
+      self$firmsResolveProjects()
+      
+      # 1. Interest is paid
       self$firmsRepay()
       
-      # 1. each firm applies for loans for their current investment
+      # 2. each firm applies for loans for their current investment
       self$firmsApply(Borrowings)
       
-      # 2. each firm keeps or discards their current opportunity
+      # 3. each firm keeps or discards their current opportunity
       self$firmsInvest(Investments)
       
-      # 3. firms consume whatever is not invested
+      # 4. firms consume whatever is not invested
       Rewards$Firms <- map(
         self$Firms,
         function(firm) {
@@ -578,8 +581,6 @@ Intermediation <- R6Class(
       self$Firms %>%
         map(function(firm) {
           firm$receiveRate(self$rate, self$depreciation)
-          #firm$cash <- firm$cash + firm$capital * self$rate
-          #firm$capital <- firm$capital * (1 - self$depreciation)
         })
       
     },
@@ -622,11 +623,11 @@ Intermediation <- R6Class(
         map(
           function(firm) {
             application <- firm$application
-            if (application$bank != -1) {
+            if (!is.null(application)) {
               decision <- self$Banks[[application$bank]]$process(application)
               firm$rollProject(decision)
             } else {
-              firm$rollProject(1) # no loan required # !!! should be some other argument
+              return(-1)
             }
           }
         )
@@ -639,6 +640,14 @@ Intermediation <- R6Class(
       
       invisible(self)
     },   
+    
+    firmsResolveProjects = function() {
+      "Each Firm's Projects are advanced 1 step"
+      self$Firms %>%
+        map(function(firm){
+          firm$resolveProject()
+        })
+    },
     
     firmsRepay = function() {
       "Loan Payments from Firms to Banks"
@@ -689,7 +698,7 @@ Intermediation <- R6Class(
         reduce(rbind) %>%
         split(.$bank) %>%
         arrange(bank) %>%
-        right_join(tibble(bank = 1:length(self$Banks)))
+        right_join(tibble(bank = 1:length(self$Banks)), by = "bank")
       
       # add to bank queue
       self$Banks %>%
@@ -708,7 +717,7 @@ Intermediation <- R6Class(
       map2(
         self$Firms, Investments,
         function(firm, decision) {
-          # 1 is invest, 0 discard
+          # position 1 is discard, position 2 is invest
           firm$invest(decision)
         }
       )

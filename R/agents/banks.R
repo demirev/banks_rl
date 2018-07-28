@@ -434,7 +434,6 @@ Bank <- R6Class(
       return(list(depositRate = self$depositRate, distress = max(1, distress)))
     },
     
-    
     payWithdrawal = function(amount) {
       "Withdrawals of depostits"
       distress <- self$reserves / amount # if 1 or above, pay in full
