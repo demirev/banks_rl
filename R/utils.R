@@ -37,3 +37,19 @@ isoElasticUtilityGen <- function(Rho = 1) {
   return(utilF)
   
 }
+
+calcIncrement <- function(decision) {
+  if (!length(decision) %% 2) {
+    stop("decision must be odd-length")
+  }
+  
+  ind <- which(decision != 0)
+  
+  if (sum(ind) != 1) {
+    stop("Decision must have exactly one non-zero value")
+  }
+  
+  midpoint <- ceiling(length(decision)/2)
+  
+  return(ind - midpoint)
+}

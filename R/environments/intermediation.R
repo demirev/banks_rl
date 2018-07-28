@@ -3,9 +3,35 @@ Intermediation <- R6Class(
   inherit = EconomyConstructor,
   public = list(
     
+    output = NULL,
+    wage = NULL,
+    rate = NULL,
+    depreciation = NULL,
     InfoSets = list(Bank = list(), Households = list(), Firms = list()),
     OldInfoSets = list(Bank = list(), Households = list(), Firms = list()),
     Rewards = list(Bank = list(), Households = list(), Firms = list()),
+    
+    initialize = function(
+      households = list(), 
+      banks = list(), 
+      firms = list(),
+      dqns, 
+      lossFunction, 
+      bufferSize = 1000,
+      depreciation = 1
+    ) {
+      super$initialize(
+        households,
+        banks, 
+        firms,
+        dqns, 
+        lossFunction, 
+        bufferSize
+      )
+      
+      self$depreciation = depreciation
+      
+    },
     
     createOptimizer = function() {
       "Initialize the optimizers"
@@ -121,7 +147,7 @@ Intermediation <- R6Class(
       lapply(
         self$Households,
         function(household) {
-          household$getInterest(interestRates)
+          household$receiveInterest(interestRates)
         }
       )
       
@@ -441,24 +467,31 @@ Intermediation <- R6Class(
     getInfoSet = function(type = "Banks") {
       "Generates a state vector for each agent"
       
+      economyStates <- self$getEconomyState()
+      
       if (type == "Banks") {
         self$OldInfoSets$Banks <- self$InfoSets$Banks
         
-        # Aggregate economy state
-        # TO DO
-        
-        self$InfoSets$Banks <- map(
+        # Get some info for other banks
+        bankStates <- map(
           self$Banks,
           function(bank) {
             bank$getState()
+          }
+        ) %>%
+          reduce(rbind) %>%
+          colMeans
+        
+        # combine with each bank's individual state
+        self$InfoSets$Banks <- map(
+          self$Banks,
+          function(bank) {
+            c(bank$getState(), bankStates, economyStates)
           }
         )
         
       } else if (type == "Firms") {
         self$OldInfoSets$Firms <- self$InfoSets$Firms
-        
-        # Get aggregate economy state
-        # TO DO
         
         # Get some info for each bank
         bankStates <- map(
@@ -473,7 +506,7 @@ Intermediation <- R6Class(
         self$InfoSets$Firms <- map(
           self$Firms,
           function(firm) {
-            c(bankStates, firm$getState())
+            c(firm$getState(), bankStates, economyStates)
           }
         )
         
@@ -496,7 +529,7 @@ Intermediation <- R6Class(
         self$InfoSets$Households <- map(
           self$Households,
           function(household) {
-            c(bankStates, household$getState())
+            c(household$getState(), bankStates, economyStates)
           }
         )
         
@@ -505,6 +538,15 @@ Intermediation <- R6Class(
       }
       
       invisible(self)
+    },
+    
+    getEconomyState = function() {
+      "Some state variables that summarize the economy"
+      c(
+        "ouput" = self$output,
+        "wage" = self$wage,
+        "rate" = self$rate
+      )
     },
     
     produce = function() {
@@ -522,20 +564,22 @@ Intermediation <- R6Class(
       # carry out production
       self$ProductionFunction$shock()
       
-      output <- self$ProductionFunction$produce(capital, labor)
-      wage <- self$ProductionFunction$wage(capital, labor)
-      rate <- self$ProductionFunction$rate(capital, labor)
+      self$output <- self$ProductionFunction$produce(capital, labor)
+      self$wage <- self$ProductionFunction$wage(capital, labor)
+      self$rate <- self$ProductionFunction$rate(capital, labor)
       
       # give out factor products (and depreciate)
       self$Households %>%
         map(function(houshold) {
-          household$cash <- household$cash + household$labor * wage
+          household$receiveWage(self$wage)
+          #household$cash <- household$cash + household$labor * self$wage
         })
       
       self$Firms %>%
         map(function(firm) {
-          firm$cash <- firm$cash + firm$capital * rate
-          firm$capital <- firm$capital * (1 - self$depreciation)
+          firm$receiveRate(self$rate, self$depreciation)
+          #firm$cash <- firm$cash + firm$capital * self$rate
+          #firm$capital <- firm$capital * (1 - self$depreciation)
         })
       
     },
@@ -554,7 +598,8 @@ Intermediation <- R6Class(
       self$Households %>%
         map(
           function(household) {
-            household$holdings[Outcomes == 1] <- 0 # loses savings
+            household$bankDefaults(Outcomes == 1)
+            #household$holdings[Outcomes == 1] <- 0 # loses savings
           }
         )
       
@@ -581,7 +626,7 @@ Intermediation <- R6Class(
               decision <- self$Banks[[application$bank]]$process(application)
               firm$rollProject(decision)
             } else {
-              firm$rollProject(1) # no loan required
+              firm$rollProject(1) # no loan required # !!! should be some other argument
             }
           }
         )
@@ -589,7 +634,7 @@ Intermediation <- R6Class(
       # clean banks' queued loan applications
       self$Banks %>%
         map(function(bank) {
-          bank$applications <- tibble()
+          bank$clearQueue()
         })
       
       invisible(self)
@@ -620,8 +665,7 @@ Intermediation <- R6Class(
       pmap(
         list(self$Banks, principal, interest),
         function(bank, principal, interest) {
-          bank$loans    <- bank$loans - principal
-          bank$reserves <- bank$reserves + principal + interest
+          bank$receivePayment(principal, interest)
         }
       )
       
@@ -652,7 +696,7 @@ Intermediation <- R6Class(
         map2(
           Applications, 
           function(bank, applications) {
-            bank$applications <- applications
+            bank$addQueue(applications)
           }
         )
       
@@ -677,25 +721,36 @@ Intermediation <- R6Class(
       Amounts <- map2(
         self$Households, Withdrawals,
         function(household, decision) {
+          household$requestWithdrawal(decision)
           # vector with amount withdrawn from each bank
-          amount <- household$holdings * (decision == 1)
+          #amount <- household$holdings * (decision == 1)
           
-          # set withdrawals to zero
-          household$holdings[decision == 1] <- 0
-          
-          return(amount)
+          #return(amount)
         }
       ) %>%
         reduce(cbind) %>%
         rowSums
       
-      map2(
+      AmountsPaid <- map2(
         self$Banks, Amounts,
         function(bank, amount){
-          bank$deposits <- bank$deposits - amount
-          bank$reserves <- bank$reserves - amount
+          bank$payWithdrawal(amount)
+        }
+      ) %>% # precentage of requested rapyment
+        unlist
+      
+      map2(
+        self$Households, Withdrawals,
+        function(household, decision) {
+          household$receiveWithdrawal(decision, AmountsPaid)
+          # vector with amount withdrawn from each bank
+          #amount <- household$holdings * (decision == 1) * AmountsPaid
+          #household$cash <- household$cash + sum(amount)
+          # set withdrawals to zero
+          #household$holdings[decision == 1] <- 0
         }
       )
+      
     },
     
     householdsDeposit = function(Deposits) {
@@ -705,10 +760,11 @@ Intermediation <- R6Class(
         self$Households, Deposits,
         function(household, decision) {
           # vector with amount deposited in each bank (all but one are zero)
-          res <- household$cash * (decision == 1)
-          household$holdings <- household$holdings + res
-          if (sum(decision) != 0) household$cash <- 0
-          return(res)
+          household$deposit(decision)
+          #res <- household$cash * (decision == 1)
+          #household$holdings <- household$holdings + res
+          #if (sum(decision) != 0) household$cash <- 0
+          #return(res)
         }
       ) %>%
         reduce(cbind) %>%
@@ -717,8 +773,7 @@ Intermediation <- R6Class(
       map2(
         self$Banks, Amounts,
         function(bank, amount){
-          bank$deposits <- bank$deposits + amount
-          bank$reserves <- bank$reserves + amount
+          bank$receiveDeposit(amount)
         }
       )
     }

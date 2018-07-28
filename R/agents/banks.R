@@ -214,3 +214,256 @@ DummyBankInv <- R6Class(
     }
   )
 )
+
+Bank <- R6Class(
+  "A Bank Class",
+  public = list(
+    baseDepositRate = 0,
+    depositRate = 0,
+    deposits = 0,
+    loanRate = 0,
+    loans  = 0,
+    capital = 0,
+    reserves = 0,
+    defaultCounter = 0,
+    capitalRatio = 0, # capital-to-loans requirement
+    reserveRatio = 0, # reserves-to-loans requirement
+    resetValues = list(),
+    utilf = NULL,
+    loanIncrement = 0,
+    depositIncrement = 0,
+    approvalIncrement = 0,
+    queue = tibble(), # holds loan applications
+    
+    initialize = function(
+      depositRate = 0.09,
+      deposits = 0,
+      loanRate = 0.12,
+      loans = 300,
+      capital = 500,
+      reserves = 150,
+      capitalRatio = 0.08,
+      reserveRatio = 0.10,
+      dividentRatio = 0.03,
+      noDividentPeriod = 6,
+      utilf = logUtility,
+      loanIncrement = 0.25,
+      depositIncrement = 0.25,
+      approvalIncrement = 0.25,
+    ) {
+      self$baseDepositRate = depositRate
+      self$baseLoanRate = loanRate
+      
+      self$resetValues$deposits = deposits
+      self$resetValues$loans = loans
+      self$resetValues$capital = capital
+      self$resetValues$reserves = reserves
+      self$resetValues$provisions = provisions
+      
+      self$capitalRatio = capitalRatio
+      self$reserveRatio = reserveRatio
+      self$dividentRatio = dividentRatio
+      self$noDividentPeriod = noDividentPeriod
+      
+      self$loanIncrement = loanIncrement
+      self$depositIncrement = depositIncrement
+      self$approvalIncrement = approvalIncrement
+      
+      self$utilf = utilf
+      
+      self$reset()
+    },
+    
+    reset = function() {
+      "Balance sheet to initial values"
+      self$depositRate = self$baseDepositRate
+      self$deposits = self$resetValues$deposits
+      self$loanRate = self$baseLoanRate
+      self$loans = self$resetValues$loans
+      self$capital = self$resetValues$capital
+      self$reserves = self$resetValues$reserves
+    },
+    
+    getState = function() {
+      "Return a vector describing the banks state for decision making"
+      
+      state <- c(
+        self$depositRate,
+        self$deposits,
+        self$loans,
+        self$capital,
+        self$reserves,
+        self$defaultCounter
+      )
+      
+      return(state)
+    },
+    
+    calculateCapital = function() {
+      "Updates capital"
+      assets <- self$loans + self$reserves
+      liabilities <- self$deposits
+      
+      self$capital <- assets - liabilities
+      
+      invisible(self)
+    }
+    
+    isDefault = function() {
+      "Checks if bank is defaulted"
+      
+      self$calculateCapital()
+      
+      if (self$capital < 0) {
+        self$reset()
+        self$defaultCounter = 0
+        return(1)
+      } else {
+        self$defaultCounter = self$defaultCounter + 1
+        return(0)
+      }
+    },
+    
+    # default = function() {
+    #   "Resolve a default"
+    # },
+    
+    consume = function() {
+      "Distributes part of the capital as divident"
+      
+      # check if paying divident will violate capital requirements
+      if (self$capital/self$loans < self$capitalRatio) {
+        divident <- 0
+      } else if ((1 - self$dividentRatio)*self$capital/self$loans < self$capitalRatio) {
+        divident <- self$capital - self$loans * self$capitalRatio
+      } else {
+        divident <- self$dividentRatio * self$capital
+      }
+      
+      # check if paying divident will violate reserve requirements
+      if (self$reserves/self$loans < self$reserveRatio) {
+        divident <- 0
+      } else if ((self$reserves - divident)/self$loans < self$reserveRatio) {
+        divident <- self$reserves - self$loans * self$reserveRatio
+      }
+      
+      self$capital <- self$capital - divident
+      self$reserves <- self$reserves - divident
+      
+      utility <- self$utilf(divident)
+      
+      return(utility)
+    },
+    
+    adjustLoans = function(decision) {
+      "Increments the interest rate on loans up or down"
+      
+      increment <- calcIncrement(decision)
+      self$loanRate <- self$loanRate + self$loanIncrement * increment
+      
+      invisible(self)
+    },
+    
+    adjustDeposits = function(decision) {
+      "Increments the interest rate on deposits up or down"
+      
+      increment <- calcIncrement(decision)
+      self$depositRate <- self$depositRate + self$depositIncrement * increment
+      
+      invisible(self)
+    },
+    
+    adjustApprovals = function(decision) {
+      "Increments the cut-off FCF/Loan ratio"
+      
+      increment <- calcIncrement(decision)
+      self$approvalRate <- self$approvalRate + self$approvalIncrement * increment
+      
+      invisible(self)
+    },
+    
+    processLoan = function(application) {
+      "Process a loan and return a yes/no decision"
+      if (is.null(application)) return(0)
+      
+      # calculate net cash flow (accounting for default probability)
+      ncf <- application$income * (1 - application$default_prob)^(1:application$duration)
+      ncf <- sum(ncf) + application$terminal_income * (1 - application$default_prob)^application$duration
+      
+      if (ncf / application$amount < self$approveRate) {
+        # loan rejected due to bank's own profitability requirements
+        return(0)
+      } else if (self$reserves - application$amount < self$loans * self$reserveRatio) {
+        # loan rejected due to insufficient reserves
+        return(0)
+      } else if (self$capital/self$loans < self$capitalRatio) {
+        # banks cannot issue new loans when under-capitalized
+        return(0)
+      } else {
+        # loan approved
+        self$loans <- self$loans + application$amount
+        self$reserves <- self$reserves - application$amount 
+        self$calculateCapital()
+        return(self$loanRate)
+      }
+    },
+    
+    addQueue = function(applications) {
+      "Queues received applications"
+      self$queue <- applications
+    },
+    
+    clearQueue = function() {
+      "Removes everything from queue"
+      self$queue <- tibble()
+    },
+    
+    payDeposits = function() {
+      "Pays out interest on deposits"
+      # payment outstanding
+      payment <- self$depositRate * self$deposits
+      distress <- self$reserves / payment # if 1 or above, pay in full
+      
+      if (distress < 1) {
+        payment <- self$reserves
+      }
+      
+      self$reserves <- self$reserves - payment
+      self$capital  <- self$capital - payment
+      
+      return(list(depositRate = self$depositRate, distress = max(1, distress)))
+    },
+    
+    
+    payWithdrawal = function(amount) {
+      "Withdrawals of depostits"
+      distress <- self$reserves / amount # if 1 or above, pay in full
+      
+      if (distress < 1) {
+        amount <- self$reserves
+      }
+      
+      self$deposits <- self$deposits - amount
+      self$reserves <- self$reserves - amount
+      self$calculateCapital()
+      
+      return(max(1, distress))
+    },
+    
+    receivePayment = function(principal, interest) {
+      "Payments on loans"
+      self$loans    <- self$loans - principal
+      self$reserves <- self$reserves + principal + interest
+      self$capital  <- self$capital + interest
+      invisible(self)
+    },
+   
+    receiveDeposit = function(amount) {
+      "New deposits"
+      self$deposits <- self$deposits + amount
+      self$reserves <- self$reserves + amount
+      self$calculateCapital()
+    }
+  )
+)
+
