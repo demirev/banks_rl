@@ -48,8 +48,8 @@ calcIncrement <- function(decision) {
   
   ind <- which(decision != 0)
   
-  if (sum(ind) != 1) {
-    stop("Decision must have exactly one non-zero value")
+  if (sum(decision != 0) != 1) {
+    stop("Decision must have exactly one non-zero value") 
   }
   
   midpoint <- ceiling(length(decision)/2)
@@ -77,11 +77,11 @@ CobbDouglass <-  R6Class(
       return(self$productivity * K^self$capital_share * L^(1 - self$capital_share))
     },
     
-    wage = function(K, L) {
+    rate = function(K, L) {
       return(self$capital_share * self$productivity * K^(self$capital_share - 1) * L^(1 - self$capital_share))
     },
     
-    rate = function(K, L) {
+    wage = function(K, L) {
       return((1 - self$capital_share) * self$productivity * K^self$capital_share * L^(-self$capital_share))
     }
   )

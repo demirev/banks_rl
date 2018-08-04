@@ -48,7 +48,7 @@ Household <- R6Class(
     consume = function() {
       "Consume available cash to get utility. Get Income"
       utility <- self$utilf(self$cash)
-      self$cash <- self$income
+      self$cash <- 0
       
       return(utility)
     },
@@ -70,7 +70,7 @@ Household <- R6Class(
       invisible(self)
     },
     
-    requestWithdrawal = function(decision) {
+    requestWithdrawal = function(decision) { 
       # vector with amount withdrawn from each bank
       amount <- self$holdings * (decision == 1)
       
@@ -86,7 +86,7 @@ Household <- R6Class(
       self$holdings[decision == 1] <- 0
     },
     
-    deposit = function(decision) {
+    deposit = function(decision) { 
       # vector with amount deposited in each bank
       res <- self$cash * (decision == 1)
       self$holdings <- self$holdings + res
@@ -94,7 +94,7 @@ Household <- R6Class(
       return(res)
     },
     
-    bankDefaults = function(otucomes) {
+    bankDefaults = function(outcomes) {
       self$holdings[outcomes] <- 0 # loses savings in defaulted banks
     }
     

@@ -221,13 +221,18 @@ Bank <- R6Class(
     baseDepositRate = 0,
     depositRate = 0,
     deposits = 0,
+    baseLoanRate = 0,
     loanRate = 0,
     loans  = 0,
     capital = 0,
     reserves = 0,
+    approvalRate = 0,
+    baseApprovalRate = 0,
     defaultCounter = 0,
     capitalRatio = 0, # capital-to-loans requirement
     reserveRatio = 0, # reserves-to-loans requirement
+    dividentRatio = 0,
+    noDividentPeriod = 0,
     resetValues = list(),
     utilf = NULL,
     loanIncrement = 0,
@@ -236,6 +241,7 @@ Bank <- R6Class(
     queue = tibble(), # holds loan applications
     
     initialize = function(
+      approvalRate = 1,
       depositRate = 0.09,
       deposits = 0,
       loanRate = 0.12,
@@ -247,10 +253,12 @@ Bank <- R6Class(
       dividentRatio = 0.03,
       noDividentPeriod = 6,
       utilf = logUtility,
-      loanIncrement = 0.25,
-      depositIncrement = 0.25,
-      approvalIncrement = 0.25,
+      loanIncrement = 0.0025,
+      depositIncrement = 0.0025,
+      approvalIncrement = 0.0025
     ) {
+      self$baseApprovalRate = approvalRate
+      
       self$baseDepositRate = depositRate
       self$baseLoanRate = loanRate
       
@@ -258,7 +266,6 @@ Bank <- R6Class(
       self$resetValues$loans = loans
       self$resetValues$capital = capital
       self$resetValues$reserves = reserves
-      self$resetValues$provisions = provisions
       
       self$capitalRatio = capitalRatio
       self$reserveRatio = reserveRatio
@@ -276,6 +283,7 @@ Bank <- R6Class(
     
     reset = function() {
       "Balance sheet to initial values"
+      self$approvalRate = self$baseApprovalRate
       self$depositRate = self$baseDepositRate
       self$deposits = self$resetValues$deposits
       self$loanRate = self$baseLoanRate
@@ -288,12 +296,13 @@ Bank <- R6Class(
       "Return a vector describing the banks state for decision making"
       
       state <- c(
-        self$depositRate,
-        self$deposits,
-        self$loans,
-        self$capital,
-        self$reserves,
-        self$defaultCounter
+        "depositRate" = self$depositRate,
+        "deposits" = self$deposits,
+        "loanRate" = self$loanRate,
+        "loans" = self$loans,
+        "capital" = self$capital,
+        "reserves" = self$reserves,
+        "defaultCounter" = self$defaultCounter
       )
       
       return(state)
@@ -307,7 +316,7 @@ Bank <- R6Class(
       self$capital <- assets - liabilities
       
       invisible(self)
-    }
+    },
     
     isDefault = function() {
       "Checks if bank is defaulted"
@@ -331,9 +340,14 @@ Bank <- R6Class(
     consume = function() {
       "Distributes part of the capital as divident"
       
+      # check if bank has defaulted soon enough to be allowed to pay dividents
+      if (self$defaultCounter <= self$noDividentPeriod) {
+        return(self$utilf(0))
+      }
+      
       # check if paying divident will violate capital requirements
       if (self$capital/self$loans < self$capitalRatio) {
-        divident <- 0
+        return(self$utilf(0))
       } else if ((1 - self$dividentRatio)*self$capital/self$loans < self$capitalRatio) {
         divident <- self$capital - self$loans * self$capitalRatio
       } else {
@@ -342,7 +356,7 @@ Bank <- R6Class(
       
       # check if paying divident will violate reserve requirements
       if (self$reserves/self$loans < self$reserveRatio) {
-        divident <- 0
+        return(self$utilf(0))
       } else if ((self$reserves - divident)/self$loans < self$reserveRatio) {
         divident <- self$reserves - self$loans * self$reserveRatio
       }
@@ -357,10 +371,10 @@ Bank <- R6Class(
     
     adjustLoans = function(decision) {
       "Increments the interest rate on loans up or down"
-      
       increment <- calcIncrement(decision)
       self$loanRate <- self$loanRate + self$loanIncrement * increment
       
+      if (self$loanRate <= 0.001) self$loanRate <- 0.001
       invisible(self)
     },
     
@@ -370,6 +384,7 @@ Bank <- R6Class(
       increment <- calcIncrement(decision)
       self$depositRate <- self$depositRate + self$depositIncrement * increment
       
+      if (self$depositRate <= 0.001) self$depositRate <- 0.001
       invisible(self)
     },
     
@@ -377,8 +392,9 @@ Bank <- R6Class(
       "Increments the cut-off FCF/Loan ratio"
       
       increment <- calcIncrement(decision)
-      self$approvalRate <- self$approvalRate + self$approvalIncrement * increment
+      self$approvalRate <- self$approvalRate + self$approvalIncrement * increment 
       
+      if (self$approvalRate <= 0.001) self$approvalRate <- 0.001
       invisible(self)
     },
     
@@ -388,9 +404,9 @@ Bank <- R6Class(
       
       # calculate net cash flow (accounting for default probability)
       ncf <- application$income * (1 - application$default_prob)^(1:application$duration)
-      ncf <- sum(ncf) + application$terminal_income * (1 - application$default_prob)^application$duration
+      ncf <- sum(ncf) + application$terminal_income * (1 - application$default_prob)^application$duration 
       
-      if (ncf / application$amount < self$approveRate) {
+      if (ncf / application$amount < self$approvalRate) {
         # loan rejected due to bank's own profitability requirements
         return(0)
       } else if (self$reserves - application$amount < self$loans * self$reserveRatio) {
@@ -431,12 +447,17 @@ Bank <- R6Class(
       self$reserves <- self$reserves - payment
       self$capital  <- self$capital - payment
       
-      return(self$depositRate * distress)
+      return(self$depositRate * min(distress, 1))
     },
     
-    payWithdrawal = function(amount) {
+    payWithdrawal = function(amount) { 
       "Withdrawals of depostits"
-      distress <- self$reserves / amount # if 1 or above, pay in full
+      if (amount != 0) {
+        distress <- self$reserves / amount # if 1 or above, pay in full
+      } else {
+        distress <- 1 # bank can always repay 0
+      }
+      
       
       if (distress < 1) {
         amount <- self$reserves
@@ -446,7 +467,7 @@ Bank <- R6Class(
       self$reserves <- self$reserves - amount
       self$calculateCapital()
       
-      return(max(1, distress))
+      return(min(1, distress))
     },
     
     receivePayment = function(principal, interest) {

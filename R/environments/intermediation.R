@@ -6,16 +6,18 @@ Intermediation <- R6Class(
     output = NULL,
     wage = NULL,
     rate = NULL,
+    ProductionFunction = NULL,
     depreciation = NULL,
-    InfoSets = list(Bank = list(), Households = list(), Firms = list()),
-    OldInfoSets = list(Bank = list(), Households = list(), Firms = list()),
-    Rewards = list(Bank = list(), Households = list(), Firms = list()),
+    InfoSets = list(Banks = list(), Households = list(), Firms = list()),
+    OldInfoSets = list(Banks = list(), Households = list(), Firms = list()),
+    Rewards = list(Banks = list(), Households = list(), Firms = list()),
     
     initialize = function(
       households = list(), 
       banks = list(), 
       firms = list(),
       dqns, 
+      productionFunction = CobbDouglass$new(),
       lossFunction, 
       bufferSize = 1000,
       depreciation = 1
@@ -29,6 +31,7 @@ Intermediation <- R6Class(
         bufferSize
       )
       
+      self$ProductionFunction = productionFunction
       self$depreciation = depreciation
       
     },
@@ -61,7 +64,7 @@ Intermediation <- R6Class(
       "Steps through banks' actions"
       
       # 0. Check for defaults
-      bankOutcomes <- lapply(
+      bankOutcomes <- lapply( 
         self$Banks,
         function(bank) {
           bank$isDefault() # dummy actions by each bank
@@ -83,7 +86,7 @@ Intermediation <- R6Class(
       )
       
       # 3. Bank management gets excess capital as a reward
-      Rewards$Banks <- map(
+      self$Rewards$Banks <- map(
         self$Banks,
         function(bank) {
           bank$consume()
@@ -102,14 +105,14 @@ Intermediation <- R6Class(
       # 1. Interest is paid
       self$firmsRepay()
       
-      # 2. each firm applies for loans for their current investment
-      self$firmsApply(Borrowings)
-      
-      # 3. each firm keeps or discards their current opportunity
+      # 2. each firm keeps or discards their current opportunity
       self$firmsInvest(Investments)
       
+      # 3. each firm applies for loans for their current investment
+      self$firmsApply(Borrowings)
+      
       # 4. firms consume whatever is not invested
-      Rewards$Firms <- map(
+      self$Rewards$Firms <- map(
         self$Firms,
         function(firm) {
           firm$consume()
@@ -119,7 +122,7 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    stepHousehold = function() {
+    stepHousehold = function(Withdrawals, Deposits) {  
       "Steps through households' actions"
       
       # last element corresponds to no action (no withdrawal or deposit) 
@@ -133,7 +136,7 @@ Intermediation <- R6Class(
       self$householdsDeposit(Deposits)
       
       # 3. Households consume whatever is not deposited
-      Rewards$Households <- map(
+      self$Rewards$Households <- map(
         self$Households,
         function(household) {
           household$consume()
@@ -207,7 +210,7 @@ Intermediation <- R6Class(
       self$Rewards = list(Bank = list(), Households = list(), Firms = list())
     },
     
-    train = function(
+    train = function( 
       numEpisodes = 10000, 
       resetProb = 0.001, 
       batch_size = 256,
@@ -224,7 +227,7 @@ Intermediation <- R6Class(
         withdraw = rep(NA, numEpisodes),
         loanrate = rep(NA, numEpisodes),
         depositrate = rep(NA, numEpisodes),
-        approve = rep(NA, numEpisodes)
+        approverate = rep(NA, numEpisodes)
       )
       
       resetFlag <- T
@@ -265,20 +268,27 @@ Intermediation <- R6Class(
           self$InfoSets$Banks, 
           function(info) {
             decision <- self$DQN$approverate$current$act(info, epsilon)
-            return(decision)
+            vec <- rep(0, 5)
+            vec[decision + 1] <- 1
+            return(vec)
           }
         )
         LoanChanges <- lapply(
           self$InfoSets$Banks,
           function(info) {
             decision <- self$DQN$loanrate$current$act(info, epsilon)
-            return(decisions)
+            vec <- rep(0, 5)
+            vec[decision + 1] <- 1
+            return(vec)
           }
         )
         DepositChanges <- lapply(
           self$InfoSets$Banks,
           function(info) {
             decision <- self$DQN$depositrate$current$act(info, epsilon)
+            vec <- rep(0, 5)
+            vec[decision + 1] <- 1
+            return(vec)
           }
         )
         
@@ -309,16 +319,16 @@ Intermediation <- R6Class(
         
         # 2.2 Make decisions
         Investments <- lapply(
-          InfoSets, 
+          self$InfoSets$Firms, 
           function(info) {
             decision <- self$DQN$invest$current$act(info, epsilon)
             vec <- c(0, 0)
             vec[decision + 1] <- 1
-            return(decision)
+            return(vec)
           }
         )
         Borrowings <- lapply(
-          InfoSets, 
+          self$InfoSets$Firms, 
           function(info) {
             decision <- self$DQN$borrow$current$act(info, epsilon)
             vec <- rep(0, length(self$Banks) + 1)
@@ -339,11 +349,11 @@ Intermediation <- R6Class(
         if (!resetFlag) {
           pmap(
             list(
-              self$OldInfoSets$Firms, 
+              self$OldInfoSets$Households, 
               Withdrawals, 
               Deposits, 
-              self$Rewards$Firms, 
-              self$InfoSets$Firms
+              self$Rewards$Households, 
+              self$InfoSets$Households
             ), 
             function(state, action_w, action_d, reward, next_state) {
               self$Buffer$withdraw$push(state, which.max(action_w) - 1L, reward, next_state)
@@ -354,7 +364,7 @@ Intermediation <- R6Class(
         
         # 3.2 Make decisions
         Withdrawals <- lapply(
-          InfoSets, 
+          self$InfoSets$Households, 
           function(info) {
             decision <- self$DQN$withdraw$current$act(info, epsilon)
             vec <- rep(0, length(self$Banks) + 1) # +1 to allow for inaction 
@@ -363,7 +373,7 @@ Intermediation <- R6Class(
           }
         )
         Deposits <- lapply(
-          InfoSets, 
+          self$InfoSets$Households, 
           function(info) {
             decision <- self$DQN$deposit$current$act(info, epsilon)
             vec <- rep(0, length(self$Banks) + 1)
@@ -373,16 +383,16 @@ Intermediation <- R6Class(
         )
         
         # 3.3 Interact with economy
-        self$stepHoushold(Withdrawals, Deposits)
+        self$stepHousehold(Withdrawals, Deposits)
         
         
         if (runif(1) <= resetProb) {
           self$reset()
-          resetFlag = T
+          resetFlag = TRUE
           self$updateHistory("full")
           self$EpisodeHistory <- list()
         } else {
-          resetFlag = F
+          resetFlag = FALSE
         }
         
         # 4. GD Step
@@ -395,6 +405,8 @@ Intermediation <- R6Class(
             self$Optimizer$invest,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$borrow$getLen() > batch_size) {
           Loss$borrow[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$borrow,
@@ -403,6 +415,8 @@ Intermediation <- R6Class(
             self$Optimizer$borrow,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$withdraw$getLen() > batch_size) {
           Loss$withdraw[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$withdraw,
@@ -411,6 +425,8 @@ Intermediation <- R6Class(
             self$Optimizer$withdraw,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$deposit$getLen() > batch_size) {
           Loss$deposit[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$deposit,
@@ -419,6 +435,8 @@ Intermediation <- R6Class(
             self$Optimizer$deposit,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$loanrate$getLen() > batch_size) {
           Loss$loanrate[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$loanrate,
@@ -427,6 +445,8 @@ Intermediation <- R6Class(
             self$Optimizer$loanrate,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$depositrate$getLen() > batch_size) {
           Loss$depositrate[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$depositrate,
@@ -435,6 +455,8 @@ Intermediation <- R6Class(
             self$Optimizer$depositrate,
             self$beta
           )$detach()$numpy()
+        }
+        if (self$Buffer$approverate$getLen() > batch_size) {
           Loss$approverate[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$approverate,
@@ -482,8 +504,9 @@ Intermediation <- R6Class(
             bank$getState()
           }
         ) %>%
-          reduce(rbind) %>%
-          colMeans
+          reduce(c)
+        
+        # TO DO - add summaries?
         
         # combine with each bank's individual state
         self$InfoSets$Banks <- map(
@@ -516,9 +539,6 @@ Intermediation <- R6Class(
       } else if (type == "Households") {
         self$OldInfoSets$Households <- self$InfoSets$Households
         
-        # Get aggregate economy state
-        # TO DO
-        
         # Get some info for each bank
         bankStates <- map(
           self$Banks,
@@ -535,7 +555,7 @@ Intermediation <- R6Class(
             c(household$getState(), bankStates, economyStates)
           }
         )
-        
+          
       } else {
         stop("Wrong type")
       }
@@ -552,7 +572,7 @@ Intermediation <- R6Class(
       )
     },
     
-    produce = function() {
+    produce = function() { 
       "Production takes place"
       
       # aggregate inputs
@@ -573,7 +593,7 @@ Intermediation <- R6Class(
       
       # give out factor products (and depreciate)
       self$Households %>%
-        map(function(houshold) {
+        map(function(household) {
           household$receiveWage(self$wage)
         })
       
@@ -582,17 +602,17 @@ Intermediation <- R6Class(
           firm$receiveRate(self$rate, self$depreciation)
         })
       
+      invisible(self)
     },
     
-    bankDefaults = function(Outcomes) {
+    bankDefaults = function(Outcomes) { 
       "Resolves pottential bank defaults"
       
       # reset bank balances
-      self$Banks %>%
-        filter(Outcomes) %>% # 1 is default
-        map(function(bank) {
-          bank$default()
-        })
+      self$Banks %>% 
+        map2(Outcomes, function(bank,outcome) {
+          if (as.logical(outcome)) bank$reset()
+        }) # 1 is default
       
       # reduce housholds' deposits
       self$Households %>%
@@ -621,8 +641,8 @@ Intermediation <- R6Class(
         map(
           function(firm) {
             application <- firm$application
-            if (!is.null(application)) {
-              decision <- self$Banks[[application$bank]]$process(application)
+            if (nrow(application) != 0) {
+              decision <- self$Banks[[application$bank]]$processLoan(application)
               firm$rollProject(decision)
             } else {
               return(-1)
@@ -645,6 +665,7 @@ Intermediation <- R6Class(
         map(function(firm){
           firm$resolveProject()
         })
+      invisible(self)
     },
     
     firmsRepay = function() {
@@ -694,9 +715,16 @@ Intermediation <- R6Class(
       Applications <- self$Firms %>% 
         map("application") %>%
         reduce(rbind) %>%
-        split(.$bank) %>%
         arrange(bank) %>%
-        right_join(tibble(bank = 1:length(self$Banks)), by = "bank")
+        right_join(tibble(bank = 1:length(self$Banks)), by = "bank") %>%
+        split(.$bank) %>%
+        map(function(bnk){
+          if (nrow(bnk) == 1 & is.na(bnk$amount[1])) {
+            # if no loans to this particular bank bnk will be a 1-row tibble with 
+            # all fields NA except bank
+            bnk <- bnk[0,]
+          }
+        })
       
       # add to bank queue
       self$Banks %>%
@@ -723,8 +751,8 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    householdsWithdraw = function(Withdrawals) {
-      "Households withdraw some of their deposits"
+    householdsWithdraw = function(Withdrawals) { 
+      "Households withdraw some of their deposits" 
       Amounts <- map2(
         self$Households, Withdrawals,
         function(household, decision) {
@@ -751,7 +779,7 @@ Intermediation <- R6Class(
       
     },
     
-    householdsDeposit = function(Deposits) {
+    householdsDeposit = function(Deposits) { 
       "Households deposit their cash"
       
       Amounts <- map2(

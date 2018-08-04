@@ -1,3 +1,4 @@
+library(magrittr) # for %<>%
 library(tidyverse)
 library(R6)
 library(reticulate)
