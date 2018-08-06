@@ -8,6 +8,9 @@ Intermediation <- R6Class(
     rate = NULL,
     ProductionFunction = NULL,
     depreciation = NULL,
+    dqnGen = NULL, 
+    dqnInd = NULL, # needed for saving/loading weights
+    dqnData = NULL, # holds saved weights
     InfoSets = list(Banks = list(), Households = list(), Firms = list()),
     OldInfoSets = list(Banks = list(), Households = list(), Firms = list()),
     Rewards = list(Banks = list(), Households = list(), Firms = list()),
@@ -16,17 +19,21 @@ Intermediation <- R6Class(
       households = list(), 
       banks = list(), 
       firms = list(),
-      dqns, 
+      dqnGen, 
       productionFunction = CobbDouglass$new(),
       lossFunction, 
       bufferSize = 1000,
       depreciation = 1
     ) {
+      
+      self$dqnGen = dqnGen
+      self$dqnInd = dqnGen()$Indices
+      
       super$initialize(
         households,
         banks, 
         firms,
-        dqns, 
+        dqnGen()$Network, 
         lossFunction, 
         bufferSize
       )
@@ -161,23 +168,31 @@ Intermediation <- R6Class(
     },
     
     updateHistory = function(type = "episode") {
+      
+      # macro variables
+      Macro <- list(
+        ouput = self$output,
+        wage = self$wage,
+        rate = self$rate
+      )
+      
       # all deposits for history
-      allProjects <- lapply(
+      Projects <- lapply(
         self$Firms,
         function(firm) {
-          firm$ProjectLoans
+          firm$Projects
         }
       ) %>%
         reduce(rbind)
       
       # bank details
-      bankBalances <- lapply(
+      Banks <- lapply(
         self$Banks,
         function(bank) {
           tibble(
-            type = bank$rating,
             depositRate = bank$depositRate,
             loanRate = bank$loanRate,
+            approvalRate = bank$approvalRate,
             defaultCounter = bank$defaultCounter,
             deposits = bank$deposits,
             loans = bank$loans,
@@ -191,8 +206,9 @@ Intermediation <- R6Class(
       if (type == "episode") {
         # update episode history
         self$EpisodeHistory[[length(self$EpisodeHistory) + 1]] <- list(
-          projects = allProjects,
-          banks    = bankBalances
+          macro    = Macro,
+          projects = Projects,
+          banks    = Banks
         )
       } else if (type == "full") {
         # add current state to full history
@@ -385,6 +401,8 @@ Intermediation <- R6Class(
         # 3.3 Interact with economy
         self$stepHousehold(Withdrawals, Deposits)
         
+        # update history and reset if needed
+        self$updateHistory("episode")
         
         if (runif(1) <= resetProb) {
           self$reset()
@@ -798,8 +816,64 @@ Intermediation <- R6Class(
           bank$receiveDeposit(amount)
         }
       )
+    },
+    
+    saveWeights = function() {
+      "Saves the weights of the DQNs as R matrices"
+      self$dqnData <- self$DQN %>%
+        map2(self$dqnInd, function(networkType, indexType){
+          map2(networkType, indexType, function(network, index){
+            index %>%
+              map(function(ind){
+                list(
+                  bias = network$layers[ind]$bias$data$numpy(),
+                  weight = network$layers[ind]$weight$data$numpy()
+                )
+              })
+          })
+        }) # this looks ugly but should do the trick for now
+    },
+    
+    loadWeights = function() {
+      "Assigns weights to the DQNs from R matrices"
+      if (is.null(self$dqnData)) {
+        stop("No weights saved")
+      }
+      
+      self$DQN <- pmap(
+        list(self$DQN, self$dqnInd, self$dqnData),
+        function(networkType, indexType, dataType) {
+          pmap(
+            list(networkType, indexType, dataType),
+            function(network, index, data) {
+              tryCatch({
+                index %>%
+                  map2(data, function(ind, dta){
+                    network$layers[ind]$bias$data = torch$tensor(dta$bias, dtype = torch$float)
+                  })
+              }, error = function(e) {
+                NULL
+              }) # tryCatch because of phantom errors
+              tryCatch({
+                index %>%
+                  map2(data, function(ind, dta){
+                    network$layers[ind]$weight$data = torch$tensor(dta$weight, dtype = torch$float)
+                  })
+              }, error = function(e) {
+                NULL
+              })
+              network
+            }
+          )
+        }
+      )
+    },
+    
+    reloadNetworks = function() {
+      "Resets the networks if the object is loaded as an .Rdata file"
+      self$DQN <- self$dqnGen()$Network
+      self$loadWeights()
     }
-    
-    
+    ####
   )
 )
