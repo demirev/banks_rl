@@ -3,6 +3,7 @@ Intermediation <- R6Class(
   inherit = EconomyConstructor,
   public = list(
     
+    file = NULL,
     output = NULL,
     wage = NULL,
     rate = NULL,
@@ -16,6 +17,7 @@ Intermediation <- R6Class(
     Rewards = list(Banks = list(), Households = list(), Firms = list()),
     
     initialize = function(
+      file,
       households = list(), 
       banks = list(), 
       firms = list(),
@@ -26,6 +28,7 @@ Intermediation <- R6Class(
       depreciation = 1
     ) {
       
+      self$file = file
       self$dqnGen = dqnGen
       self$dqnInd = dqnGen()$Indices
       
@@ -41,6 +44,8 @@ Intermediation <- R6Class(
       self$ProductionFunction = productionFunction
       self$depreciation = depreciation
       
+      self$saveWeights()
+      saveRDS(self, file = self$file)
     },
     
     createOptimizer = function() {
@@ -231,7 +236,8 @@ Intermediation <- R6Class(
       resetProb = 0.001, 
       batch_size = 256,
       updateFreq = 200,
-      verbose = 0
+      verbose = 0,
+      saveEvery = 0
     ) {
       "Train the networks"
       # reset the economy
@@ -500,6 +506,11 @@ Intermediation <- R6Class(
           cat(".")
         } else if (verbose == 2) {
           print(self$EpisodeHistory[[length(self$EpisodeHistory)]])
+        }
+        
+        if (!is.nan(episode %% saveEvery) & (episode %% saveEvery) == 0) {
+          self$saveWeights()
+          saveRDS(self, file = self$file)
         }
       }
       
@@ -869,10 +880,14 @@ Intermediation <- R6Class(
       )
     },
     
-    reloadNetworks = function() {
-      "Resets the networks if the object is loaded as an .Rdata file"
+    reload = function(lossFunc, bufferSize = 1000L) {
+      "Resets the networks and all python objects"
       self$DQN <- self$dqnGen()$Network
       self$loadWeights()
+      self$loss <- compute_td_loss
+      self$createBuffer(bufferSize)
+      self$createOptimizer()
+      invisible(self)
     }
     ####
   )
