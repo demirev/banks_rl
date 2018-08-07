@@ -239,7 +239,7 @@ Intermediation <- R6Class(
       verbose = 0,
       saveEvery = 0
     ) {
-      "Train the networks"
+      "Train the networks" 
       # reset the economy
       
       Loss <- list(
@@ -307,7 +307,7 @@ Intermediation <- R6Class(
         DepositChanges <- lapply(
           self$InfoSets$Banks,
           function(info) {
-            decision <- self$DQN$depositrate$current$act(info, epsilon)
+            decision <- self$DQN$depositrate$current$act(info, epsilon) 
             vec <- rep(0, 5)
             vec[decision + 1] <- 1
             return(vec)
@@ -421,7 +421,7 @@ Intermediation <- R6Class(
         
         # 4. GD Step
         if (self$Buffer$invest$getLen() > batch_size) {
-          Loss$invest[episode] <- self$loss(
+          Loss$invest[episode] <- self$loss( 
             as.integer(batch_size),
             self$Buffer$invest,
             self$DQN$invest$current, 
@@ -596,8 +596,8 @@ Intermediation <- R6Class(
       "Some state variables that summarize the economy"
       c(
         "ouput" = self$output,
-        "wage" = self$wage,
-        "rate" = self$rate
+        "wage" = ifelse(is.infinite(self$wage), 1e6, self$wage),
+        "rate" = ifelse(is.infinite(self$rate), 1e6, self$rate)
       )
     },
     
