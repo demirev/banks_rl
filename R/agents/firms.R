@@ -11,14 +11,14 @@ ProjectPool <- R6Class(
     liquidation = NULL,
     
     initialize = function(
-      duration = c(10,20),
-      amount   = c(3, 9),
-      income   = c(0, 1),
-      income_sd = c(0, 3),
-      terminal_income = c(0, 1.1),
-      terminal_income_sd = c(0, 0.4),
-      default_prob = c(0, .15),
-      liquidation = c(0, 0.4) # as multiple of amount
+      duration = c(6,20),
+      amount   = c(1, 6),
+      income   = c(0, 3),
+      income_sd = c(0, 0.5),
+      terminal_income = c(0, 3),
+      terminal_income_sd = c(0, 0.5),
+      default_prob = c(0, .03),
+      liquidation = c(0, 0.6) # as multiple of amount
     ) {
       self$duration <- duration
       self$amount <- amount
@@ -632,6 +632,7 @@ Firm <- R6Class(
           self$application <- self$application %>%
             mutate(
               bank = -1, # no bank
+              interest = 0,
               outstanding = 0,
               payment = 0,
               principal = 0
@@ -652,6 +653,9 @@ Firm <- R6Class(
         # firm chooses to forgo opportunity and consume the cash
         self$application <- self$opportunity[0, ]
       }
+      
+      # draw new opportunity
+      self$opportunity <- self$ProjectPool$draw()
       
       invisible(self)
     },

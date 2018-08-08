@@ -300,6 +300,7 @@ Bank <- R6Class(
         "deposits" = self$deposits,
         "loanRate" = self$loanRate,
         "loans" = self$loans,
+        "approvalRate" = self$approvalRate,
         "capital" = self$capital,
         "reserves" = self$reserves,
         "defaultCounter" = self$defaultCounter
