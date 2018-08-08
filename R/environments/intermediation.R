@@ -50,13 +50,13 @@ Intermediation <- R6Class(
     
     createOptimizer = function() {
       "Initialize the optimizers"
-      self$Optimizer$invest <- optim$Adam(self$DQN$invest$current$parameters())
-      self$Optimizer$borrow <- optim$Adam(self$DQN$borrow$current$parameters())
-      self$Optimizer$deposit <- optim$Adam(self$DQN$deposit$current$parameters())
-      self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters())
-      self$Optimizer$loanrate <- optim$Adam(self$DQN$loanrate$current$parameters())
-      self$Optimizer$depositrate <- optim$Adam(self$DQN$depositrate$current$parameters())
-      self$Optimizer$approverate <- optim$Adam(self$DQN$approverate$current$parameters())
+      self$Optimizer$invest <- optim$Adam(self$DQN$invest$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$borrow <- optim$Adam(self$DQN$borrow$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$deposit <- optim$Adam(self$DQN$deposit$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$loanrate <- optim$Adam(self$DQN$loanrate$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$depositrate <- optim$Adam(self$DQN$depositrate$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$approverate <- optim$Adam(self$DQN$approverate$current$parameters(), lr = 0.001, weight_decay = 0.2)
       invisible(self)
     },
     
@@ -172,7 +172,7 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    updateHistory = function(type = "episode") {
+    updateHistory = function(Decisions, type = "episode") {
       
       # macro variables
       Macro <- list(
@@ -181,8 +181,8 @@ Intermediation <- R6Class(
         rate = self$rate
       )
       
-      # all deposits for history
-      Projects <- lapply(
+      # all projects for history
+      Projects <- map(
         self$Firms,
         function(firm) {
           firm$Projects
@@ -191,7 +191,7 @@ Intermediation <- R6Class(
         reduce(rbind)
       
       # bank details
-      Banks <- lapply(
+      Banks <- map(
         self$Banks,
         function(bank) {
           tibble(
@@ -208,12 +208,19 @@ Intermediation <- R6Class(
       ) %>%
         reduce(rbind)
       
+      # household's wealth
+      Deposits <- self$Households %>%
+        map("holdings")
+      
       if (type == "episode") {
         # update episode history
         self$EpisodeHistory[[length(self$EpisodeHistory) + 1]] <- list(
-          macro    = Macro,
-          projects = Projects,
-          banks    = Banks
+          macro     = Macro,
+          projects  = Projects,
+          deposits  = Deposits,
+          banks     = Banks,
+          rewards   = self$Rewards,
+          decisions = Decisions
         )
       } else if (type == "full") {
         # add current state to full history
@@ -226,13 +233,13 @@ Intermediation <- R6Class(
     reset = function() {
       "Resets the economy"
       super$reset()
-      self$InfoSets = list(Bank = list(), Households = list(), Firms = list())
-      self$OldInfoSets = list(Bank = list(), Households = list(), Firms = list())
-      self$Rewards = list(Bank = list(), Households = list(), Firms = list())
+      self$InfoSets = list(Banks = list(), Households = list(), Firms = list())
+      self$OldInfoSets = list(Banks = list(), Households = list(), Firms = list())
+      self$Rewards = list(Banks = list(), Households = list(), Firms = list())
     },
     
-    train = function( 
-      numEpisodes = 10000, 
+    train = function(
+      numEpisodes = 10000,
       resetProb = 0.001, 
       batch_size = 256,
       updateFreq = 200,
@@ -286,6 +293,10 @@ Intermediation <- R6Class(
         }
         
         # 1.2 Make decisions
+        self$DQN$approverate$current$eval() # switch networks to eval mode
+        self$DQN$loanrate$current$eval()
+        self$DQN$depositrate$current$eval()
+        
         ApproveChanges <- lapply(
           self$InfoSets$Banks, 
           function(info) {
@@ -340,6 +351,9 @@ Intermediation <- R6Class(
         }
         
         # 2.2 Make decisions
+        self$DQN$invest$current$eval() # switch networks to eval mode
+        self$DQN$borrow$current$eval()
+        
         Investments <- lapply(
           self$InfoSets$Firms, 
           function(info) {
@@ -378,13 +392,16 @@ Intermediation <- R6Class(
               self$InfoSets$Households
             ), 
             function(state, action_w, action_d, reward, next_state) {
-              self$Buffer$withdraw$push(state, which.max(action_w) - 1L, reward, next_state)
+              self$Buffer$withdraw$push(state, which.max(action_w) - 1L, reward, next_state) 
               self$Buffer$deposit$push(state, which.max(action_d) - 1L, reward, next_state)
             }
           )
         }
         
         # 3.2 Make decisions
+        self$DQN$withdraw$current$eval() # switch networks to eval mode
+        self$DQN$deposit$current$eval()
+        
         Withdrawals <- lapply(
           self$InfoSets$Households, 
           function(info) {
@@ -408,7 +425,18 @@ Intermediation <- R6Class(
         self$stepHousehold(Withdrawals, Deposits)
         
         # update history and reset if needed
-        self$updateHistory("episode")
+        self$updateHistory(
+          Decisions = list(
+            approverate = ApproveChanges,
+            loanrate = LoanChanges,
+            depositrate = DepositChanges,
+            withdraw = Withdrawals,
+            deposit = Deposits,
+            borrow = Borrowings,
+            invest = Investments
+          ), 
+          type = "episode"
+        )
         
         if (runif(1) <= resetProb) {
           self$reset()
@@ -421,6 +449,7 @@ Intermediation <- R6Class(
         
         # 4. GD Step
         if (self$Buffer$invest$getLen() > batch_size) {
+          self$DQN$invest$current$train() # switch network to train mode
           Loss$invest[episode] <- self$loss( 
             as.integer(batch_size),
             self$Buffer$invest,
@@ -429,8 +458,10 @@ Intermediation <- R6Class(
             self$Optimizer$invest,
             self$beta
           )$detach()$numpy()
+          #self$DQN$invest$current$eval() # switch back to eval
         }
         if (self$Buffer$borrow$getLen() > batch_size) {
+          self$DQN$borrow$current$train()
           Loss$borrow[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$borrow,
@@ -439,9 +470,11 @@ Intermediation <- R6Class(
             self$Optimizer$borrow,
             self$beta
           )$detach()$numpy()
+          #self$DQN$borrow$current$eval()
         }
         if (self$Buffer$withdraw$getLen() > batch_size) {
-          Loss$withdraw[episode] <- self$loss(
+          self$DQN$withdraw$current$train()
+          Loss$withdraw[episode] <- self$loss( 
             as.integer(batch_size),
             self$Buffer$withdraw,
             self$DQN$withdraw$current, 
@@ -449,8 +482,10 @@ Intermediation <- R6Class(
             self$Optimizer$withdraw,
             self$beta
           )$detach()$numpy()
+          #self$DQN$withdraw$current$eval()
         }
         if (self$Buffer$deposit$getLen() > batch_size) {
+          self$DQN$deposit$current$train()
           Loss$deposit[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$deposit,
@@ -459,8 +494,10 @@ Intermediation <- R6Class(
             self$Optimizer$deposit,
             self$beta
           )$detach()$numpy()
+          #self$DQN$deposit$current$eval()
         }
         if (self$Buffer$loanrate$getLen() > batch_size) {
+          self$DQN$loanrate$current$train()
           Loss$loanrate[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$loanrate,
@@ -469,8 +506,10 @@ Intermediation <- R6Class(
             self$Optimizer$loanrate,
             self$beta
           )$detach()$numpy()
+          #self$DQN$loanrate$current$eval()
         }
         if (self$Buffer$depositrate$getLen() > batch_size) {
+          self$DQN$depositrate$current$train()
           Loss$depositrate[episode] <- self$loss(
             as.integer(batch_size), 
             self$Buffer$depositrate,
@@ -479,8 +518,10 @@ Intermediation <- R6Class(
             self$Optimizer$depositrate,
             self$beta
           )$detach()$numpy()
+          #self$DQN$depositrate$current$eval()
         }
         if (self$Buffer$approverate$getLen() > batch_size) {
+          self$DQN$approverate$current$train()
           Loss$approverate[episode] <- self$loss(
             as.integer(batch_size),
             self$Buffer$approverate,
@@ -489,6 +530,7 @@ Intermediation <- R6Class(
             self$Optimizer$approverate,
             self$beta
           )$detach()$numpy()
+          #self$DQN$approverate$current$eval()
         }
         
         # 4. Update Target Network

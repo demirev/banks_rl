@@ -34,10 +34,13 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         
         self.layers = nn.Sequential(
+            nn.BatchNorm1d(num_inputs),
             nn.Linear(num_inputs, num_hidden),
             nn.ReLU(),
+            nn.BatchNorm1d(num_hidden),
             nn.Linear(num_hidden, num_hidden1),
             nn.ReLU(),
+            nn.BatchNorm1d(num_hidden1),
             nn.Linear(num_hidden1, num_actions)
         )
         
