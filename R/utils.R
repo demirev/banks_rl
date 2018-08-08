@@ -1,8 +1,8 @@
 generateEpsilon <- function(
   frame, 
   epsilon_start = 1, 
-  epsilon_final = 0.001,
-  epsilon_decay = 500
+  epsilon_final = 0.005,
+  epsilon_decay = 5000
 ) {
   "Generate an exploration rate"
   epsilon_final + (epsilon_start - epsilon_final) * 
