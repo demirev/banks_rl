@@ -12,11 +12,11 @@ ProjectPool <- R6Class(
     
     initialize = function(
       duration = c(6,20),
-      amount   = c(1, 6),
-      income   = c(0, 3),
-      income_sd = c(0, 0.5),
-      terminal_income = c(0, 3),
-      terminal_income_sd = c(0, 0.5),
+      amount   = c(10, 20),
+      income   = c(0, 10),
+      income_sd = c(0, 1),
+      terminal_income = c(0, 8),
+      terminal_income_sd = c(0, 1),
       default_prob = c(0, .03),
       liquidation = c(0, 0.6) # as multiple of amount
     ) {

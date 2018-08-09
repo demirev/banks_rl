@@ -57,7 +57,7 @@ calcIncrement <- function(decision) {
   return(ind - midpoint)
 }
 
-CobbDouglass <-  R6Class(
+CobbDouglass <- R6Class(
   "A Cobb-Douglass Production Function",
   public = list(
     productivity = 1,
@@ -86,3 +86,57 @@ CobbDouglass <-  R6Class(
     }
   )
 )
+
+findPropensity <- function(net, x, variable, vrange, vlength = 400, ind = 1) {
+  net$eval()
+  toTorch <- function(x) Variable(torch$FloatTensor(np$float32(t(as.matrix(x)))))
+  seq(vrange[1], vrange[2], length.out = vlength) %>%
+    map(
+      function(v) {
+        x[variable] <- v
+        net$forward(toTorch(x))$detach()$numpy()[, ind]
+      }
+    )
+} 
+# findPropensity(
+#   net = Economy_B1$DQN$invest$current, 
+#   x = Economy_B1$InfoSets$Firms[[20]], 
+#   variable = "amount_opportunity", 
+#   vrange = c(0,15), ind = c(1,2)
+# ) 
+
+findRecessions <- function(output, streak = 2) {
+  
+  outputDecrease = (diff(output) < 0)
+  outputIncrease = (diff(output) > 0)
+  
+  decreases <- 0:(streak - 1) %>%
+    map(function(s) {
+      lag(outputDecrease, s)
+    }) %>%
+    reduce(cbind) %>%
+    rowSums
+  decreases <- which(decreases == streak)
+  
+  increases <- 0:(streak - 1) %>%
+    map(function(s) {
+      lag(outputIncrease, s)
+    }) %>%
+    reduce(cbind) %>%
+    rowSums
+  increases <- which(increases == streak)
+  
+  endPoints <- decreases %>%
+    map(function(decrease) {
+      firstIncrease <- increases[increases > decrease][1]
+      if (is.na(firstIncrease)) firstIncrease <- length(output)
+      firstIncrease
+    }) %>%
+    reduce(c)
+  
+  tibble(
+    recStart = decreases,
+    recEnd = endPoints
+  ) %>%
+    filter(!duplicated(recEnd))
+}

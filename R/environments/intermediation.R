@@ -176,9 +176,11 @@ Intermediation <- R6Class(
       
       # macro variables
       Macro <- list(
-        ouput = self$output,
+        output = self$output,
         wage = self$wage,
-        rate = self$rate
+        rate = self$rate,
+        productivity = self$ProductionFunction$productivity,
+        capital = self$Firms %>% map("capital") %>% reduce(sum)
       )
       
       # all projects for history
@@ -244,7 +246,8 @@ Intermediation <- R6Class(
       batch_size = 256,
       updateFreq = 200,
       verbose = 0,
-      saveEvery = 0
+      saveEvery = 0,
+      fixed = FALSE
     ) {
       "Train the networks" 
       # reset the economy
@@ -448,100 +451,102 @@ Intermediation <- R6Class(
         }
         
         # 4. GD Step
-        if (self$Buffer$invest$getLen() > batch_size) {
-          self$DQN$invest$current$train() # switch network to train mode
-          Loss$invest[episode] <- self$loss( 
-            as.integer(batch_size),
-            self$Buffer$invest,
-            self$DQN$invest$current, 
-            self$DQN$invest$target,
-            self$Optimizer$invest,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$invest$current$eval() # switch back to eval
-        }
-        if (self$Buffer$borrow$getLen() > batch_size) {
-          self$DQN$borrow$current$train()
-          Loss$borrow[episode] <- self$loss(
-            as.integer(batch_size), 
-            self$Buffer$borrow,
-            self$DQN$borrow$current, 
-            self$DQN$borrow$target,
-            self$Optimizer$borrow,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$borrow$current$eval()
-        }
-        if (self$Buffer$withdraw$getLen() > batch_size) {
-          self$DQN$withdraw$current$train()
-          Loss$withdraw[episode] <- self$loss( 
-            as.integer(batch_size),
-            self$Buffer$withdraw,
-            self$DQN$withdraw$current, 
-            self$DQN$withdraw$target,
-            self$Optimizer$withdraw,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$withdraw$current$eval()
-        }
-        if (self$Buffer$deposit$getLen() > batch_size) {
-          self$DQN$deposit$current$train()
-          Loss$deposit[episode] <- self$loss(
-            as.integer(batch_size), 
-            self$Buffer$deposit,
-            self$DQN$deposit$current, 
-            self$DQN$deposit$target,
-            self$Optimizer$deposit,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$deposit$current$eval()
-        }
-        if (self$Buffer$loanrate$getLen() > batch_size) {
-          self$DQN$loanrate$current$train()
-          Loss$loanrate[episode] <- self$loss(
-            as.integer(batch_size),
-            self$Buffer$loanrate,
-            self$DQN$loanrate$current, 
-            self$DQN$loanrate$target,
-            self$Optimizer$loanrate,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$loanrate$current$eval()
-        }
-        if (self$Buffer$depositrate$getLen() > batch_size) {
-          self$DQN$depositrate$current$train()
-          Loss$depositrate[episode] <- self$loss(
-            as.integer(batch_size), 
-            self$Buffer$depositrate,
-            self$DQN$depositrate$current, 
-            self$DQN$depositrate$target,
-            self$Optimizer$depositrate,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$depositrate$current$eval()
-        }
-        if (self$Buffer$approverate$getLen() > batch_size) {
-          self$DQN$approverate$current$train()
-          Loss$approverate[episode] <- self$loss(
-            as.integer(batch_size),
-            self$Buffer$approverate,
-            self$DQN$approverate$current, 
-            self$DQN$approverate$target,
-            self$Optimizer$approverate,
-            self$beta
-          )$detach()$numpy()
-          #self$DQN$approverate$current$eval()
-        }
-        
-        # 4. Update Target Network
-        if (episode %% updateFreq == 0) {
-          update_target(self$DQN$invest$current, self$DQN$invest$target)
-          update_target(self$DQN$borrow$current, self$DQN$borrow$target)
-          update_target(self$DQN$deposit$current, self$DQN$deposit$target)
-          update_target(self$DQN$withdraw$current, self$DQN$withdraw$target)
-          update_target(self$DQN$loanrate$current, self$DQN$loanrate$target)
-          update_target(self$DQN$depositrate$current, self$DQN$depositrate$target)
-          update_target(self$DQN$approverate$current, self$DQN$approverate$target)
+        if (!fixed) {
+          if (self$Buffer$invest$getLen() > batch_size) {
+            self$DQN$invest$current$train() # switch network to train mode
+            Loss$invest[episode] <- self$loss( 
+              as.integer(batch_size),
+              self$Buffer$invest,
+              self$DQN$invest$current, 
+              self$DQN$invest$target,
+              self$Optimizer$invest,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$invest$current$eval() # switch back to eval
+          }
+          if (self$Buffer$borrow$getLen() > batch_size) {
+            self$DQN$borrow$current$train()
+            Loss$borrow[episode] <- self$loss(
+              as.integer(batch_size), 
+              self$Buffer$borrow,
+              self$DQN$borrow$current, 
+              self$DQN$borrow$target,
+              self$Optimizer$borrow,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$borrow$current$eval()
+          }
+          if (self$Buffer$withdraw$getLen() > batch_size) {
+            self$DQN$withdraw$current$train()
+            Loss$withdraw[episode] <- self$loss( 
+              as.integer(batch_size),
+              self$Buffer$withdraw,
+              self$DQN$withdraw$current, 
+              self$DQN$withdraw$target,
+              self$Optimizer$withdraw,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$withdraw$current$eval()
+          }
+          if (self$Buffer$deposit$getLen() > batch_size) {
+            self$DQN$deposit$current$train()
+            Loss$deposit[episode] <- self$loss(
+              as.integer(batch_size), 
+              self$Buffer$deposit,
+              self$DQN$deposit$current, 
+              self$DQN$deposit$target,
+              self$Optimizer$deposit,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$deposit$current$eval()
+          }
+          if (self$Buffer$loanrate$getLen() > batch_size) {
+            self$DQN$loanrate$current$train()
+            Loss$loanrate[episode] <- self$loss(
+              as.integer(batch_size),
+              self$Buffer$loanrate,
+              self$DQN$loanrate$current, 
+              self$DQN$loanrate$target,
+              self$Optimizer$loanrate,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$loanrate$current$eval()
+          }
+          if (self$Buffer$depositrate$getLen() > batch_size) {
+            self$DQN$depositrate$current$train()
+            Loss$depositrate[episode] <- self$loss(
+              as.integer(batch_size), 
+              self$Buffer$depositrate,
+              self$DQN$depositrate$current, 
+              self$DQN$depositrate$target,
+              self$Optimizer$depositrate,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$depositrate$current$eval()
+          }
+          if (self$Buffer$approverate$getLen() > batch_size) {
+            self$DQN$approverate$current$train()
+            Loss$approverate[episode] <- self$loss(
+              as.integer(batch_size),
+              self$Buffer$approverate,
+              self$DQN$approverate$current, 
+              self$DQN$approverate$target,
+              self$Optimizer$approverate,
+              self$beta
+            )$detach()$numpy()
+            #self$DQN$approverate$current$eval()
+          }
+          
+          # 5. Update Target Network
+          if (episode %% updateFreq == 0) {
+            update_target(self$DQN$invest$current, self$DQN$invest$target)
+            update_target(self$DQN$borrow$current, self$DQN$borrow$target)
+            update_target(self$DQN$deposit$current, self$DQN$deposit$target)
+            update_target(self$DQN$withdraw$current, self$DQN$withdraw$target)
+            update_target(self$DQN$loanrate$current, self$DQN$loanrate$target)
+            update_target(self$DQN$depositrate$current, self$DQN$depositrate$target)
+            update_target(self$DQN$approverate$current, self$DQN$approverate$target)
+          }
         }
         
         if (verbose == 1) {
@@ -577,6 +582,14 @@ Intermediation <- R6Class(
         ) %>%
           reduce(c)
         
+        names(bankStates) <- paste(
+          names(bankStates), 
+          rep(
+            1:length(self$Banks), 
+            each = length(bankStates) / length(self$Banks)
+          ), 
+          sep = "_"
+        )
         # TO DO - add summaries?
         
         # combine with each bank's individual state
@@ -599,6 +612,15 @@ Intermediation <- R6Class(
         ) %>%
           reduce(c)
         
+        names(bankStates) <- paste(
+          names(bankStates), 
+          rep(
+            1:length(self$Banks), 
+            each = length(bankStates) / length(self$Banks)
+          ), 
+          sep = "_"
+        )
+        
         # Combine it with the firm's holdings
         self$InfoSets$Firms <- map(
           self$Firms,
@@ -618,6 +640,14 @@ Intermediation <- R6Class(
           }
         ) %>%
           reduce(c)
+        names(bankStates) <- paste(
+          names(bankStates), 
+          rep(
+            1:length(self$Banks), 
+            each = length(bankStates) / length(self$Banks)
+          ), 
+          sep = "_"
+        )
         
         # Combine it with the household's state
         self$InfoSets$Households <- map(
@@ -637,9 +667,10 @@ Intermediation <- R6Class(
     getEconomyState = function() {
       "Some state variables that summarize the economy"
       c(
-        "ouput" = self$output,
+        "output" = self$output,
         "wage" = ifelse(is.infinite(self$wage), 1e6, self$wage),
-        "rate" = ifelse(is.infinite(self$rate), 1e6, self$rate)
+        "rate" = ifelse(is.infinite(self$rate), 1e6, self$rate)#,
+        #"productivity" = self$ProductionFunction$productivity
       )
     },
     
