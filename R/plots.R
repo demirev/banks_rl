@@ -1,12 +1,3 @@
-source("R/setup.R")
-source("R/utils.R")
-source("R/agents/banks.R")
-source("R/agents/households.R")
-source("R/environments/constructor.R")
-source("R/environments/simple_savings.R")
-source("R/environments/simple_investments.R")
-source_python("python/dqn.py")
-
 library(ggplot2)
 library(gganimate)
 
@@ -106,6 +97,58 @@ linePlot2 <- function(
       size = 1.2, stat = "identity", data = sData
     ) +
     geom_line(
+      aes(y = sData[[yvar2]] * scale_factor, x = sData[[xvar]], colour = yvar2),
+      size = 1.2, stat = "identity"
+    ) + 
+    scale_y_continuous(
+      sec.axis = sec_axis(~.*(1/scale_factor), name = second_namme)
+    ) + 
+    theme(
+      legend.position = "bottom", legend.direction = "horizontal",
+      legend.title = element_blank()
+    ) +
+    labs(x = xvar, y = yvar1) +
+    ggtitle(title) +
+    scale_colour_manual(values = colors) +
+    theme(
+      axis.line = element_line(size = 1, colour = "black"),
+      panel.grid.major = element_line(colour = "#d3d3d3"), 
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(), panel.background = element_blank()
+    ) +
+    theme(
+      plot.title = element_text(size = 14, family = "serif", face = "bold"),
+      text = element_text(family = "serif"),
+      axis.text.x = element_text(colour = "black", size = 10),
+      axis.text.y = element_text(colour = "black", size = 10),
+      legend.key = element_rect(fill = "white", colour = "white")
+    )
+  
+  return(p)
+}
+
+linePlotDots <- function(
+  sData,
+  scale_factor = 1,
+  yvar1 = "value",
+  yvar2 = "value2",
+  xvar = "period",
+  title = "",
+  second_namme = yvar2,
+  colp = c("blue","darkblue"),
+  recStart = 0,
+  recEnd = 0
+) {
+  rects <- data.frame(xstart = recStart, xend = recEnd)
+  colors <- colorRampPalette(col = colp)(2)
+  
+  p <- ggplot() +
+    geom_rect(aes(xmin = rects$xstart, xmax = rects$xend, ymin = -Inf, ymax = Inf), alpha = 0.4) +
+    geom_line(
+      aes(y = sData[[yvar1]], x = sData[[xvar]], colour = yvar1), 
+      size = 1.2, stat = "identity", data = sData
+    ) +
+    geom_point(
       aes(y = sData[[yvar2]] * scale_factor, x = sData[[xvar]], colour = yvar2),
       size = 1.2, stat = "identity"
     ) + 

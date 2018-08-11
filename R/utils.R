@@ -140,3 +140,31 @@ findRecessions <- function(output, streak = 2) {
   ) %>%
     filter(!duplicated(recEnd))
 }
+
+countWithdrawals <- function(History, whch = 1, zeroToNa = T) {
+  counts <- History %>% 
+    map("decisions") %>% 
+    map("withdraw") %>%
+    map(function(x) {
+      reduce(x, rbind) %>% colSums
+    }) %>%
+    reduce(rbind) %>%
+    (function(x) {
+      x[ ,whch]
+    })
+  
+  if (zeroToNa) counts[counts == 0] <- NA
+  counts
+}
+
+countDefaults <- function(History, zeroToNa = T) {
+  counts <- History %>%
+    map("banks") %>%
+    map("defaultCounter") %>%
+    map(function(x) sum(x == 0)) %>%
+    reduce(c)
+  
+  if (zeroToNa) counts[counts == 0] <- NA
+  counts
+}
+
