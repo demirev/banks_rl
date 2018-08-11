@@ -15,6 +15,7 @@ Intermediation <- R6Class(
     InfoSets = list(Banks = list(), Households = list(), Firms = list()),
     OldInfoSets = list(Banks = list(), Households = list(), Firms = list()),
     Rewards = list(Banks = list(), Households = list(), Firms = list()),
+    Queues = list(),
     
     initialize = function(
       file,
@@ -266,7 +267,7 @@ Intermediation <- R6Class(
       
       # train
       for (episode in 1:numEpisodes) {
-        epsilon <- generateEpsilon(episode)
+        epsilon <- generateEpsilon(episode) * (!fixed) # no exploration if no training
         
         # 0. Productions takes place
         self$produce()
@@ -277,7 +278,7 @@ Intermediation <- R6Class(
         self$getInfoSet("Banks")
         
         # 1.1 Update buffer
-        if (!resetFlag) {
+        if (!resetFlag & !fixed) {
           pmap(
             list(
               self$OldInfoSets$Banks, 
@@ -337,7 +338,7 @@ Intermediation <- R6Class(
         self$getInfoSet("Firms")
         
         # 2.1 Update buffer
-        if (!resetFlag) {
+        if (!resetFlag & !fixed) {
           pmap(
             list(
               self$OldInfoSets$Firms, 
@@ -385,7 +386,7 @@ Intermediation <- R6Class(
         self$getInfoSet("Households")
         
         # 3.1 Update buffer
-        if (!resetFlag) {
+        if (!resetFlag & !fixed) {
           pmap(
             list(
               self$OldInfoSets$Households, 
@@ -753,9 +754,11 @@ Intermediation <- R6Class(
         )
       
       # clean banks' queued loan applications
-      self$Banks %>%
+      self$Queues <- self$Banks %>%
         map(function(bank) {
+          queue <- bank$queue
           bank$clearQueue()
+          return(queue)
         })
       
       invisible(self)
