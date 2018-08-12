@@ -18,12 +18,12 @@ Banks_N1 <- lapply(
       deposits = 0,
       loanRate = 0.12,
       loans = 0,
-      capital = 5000,
-      reserves = 5000,
+      capital = 1200,
+      reserves = 1200,
       capitalRatio = 0.08,
       reserveRatio = 0.10,
       dividentRatio = 0.03,
-      noDividentPeriod = 6,
+      noDividentPeriod = 18,
       utilf = logUtility,
       loanIncrement = 0.0025,
       depositIncrement = 0.0025,
@@ -38,13 +38,13 @@ Firms_N1 <- lapply(
   function(i) {
     Firm$new(
       nBanks, 
-      endowment = 100, # initial cash
+      endowment = 15, # initial cash
       endowment_k = 1, # initial capital
       utilf = logUtility, 
       Pool = ProjectPool$new(
-        duration = c(6,20),
+        duration = c(6, 25),
         amount   = c(10, 20),
-        income   = c(0, 10),
+        income   = c(0, 15),
         income_sd = c(0, 1),
         terminal_income = c(0, 8),
         terminal_income_sd = c(0, 1),
@@ -108,14 +108,14 @@ Economy_N1 <- Intermediation$new(
   dqnGen = DQN_N1, 
   lossFunction = compute_td_loss, 
   bufferSize = 2000L,
-  productionFunction = CobbDouglass$new(),
+  productionFunction = CobbDouglass$new(productivity = 3),
   depreciation = 1
 )
 
 #debug(Economy_N1$train)
 Loss <- Economy_N1$train(
   numEpisodes = 10*1024, 
-  resetProb = 0.004, 
+  resetProb = 0.001, 
   verbose = 1, 
   saveEvery = 256, 
   batch_size = 512

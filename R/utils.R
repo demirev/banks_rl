@@ -77,12 +77,13 @@ getChanges <- function(bankActions, n = 1) {
 CobbDouglass <- R6Class(
   "A Cobb-Douglass Production Function",
   public = list(
-    productivity = 1,
+    productivity = NULL,
     capital_share = NULL,
     shock_mean = 0,
     shock_sd   = 0,
     
-    initialize = function(capital_share = 0.3) {
+    initialize = function(capital_share = 0.3, productivity = 1) {
+      self$productivity <- productivity
       self$capital_share <- capital_share
     },
     

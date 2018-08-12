@@ -8,12 +8,12 @@ source("R/environments/intermediation.R")
 source_python("python/dqn.py")
 source("R/plots.R")
 
-Economy_B1 <- readRDS("R/experiments/B1.RDS")
-Economy_B1$reload(lossFunc = compute_td_loss)
-Economy_B1$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)
+# Economy_B1 <- readRDS("R/experiments/B1.RDS")
+# Economy_B1$reload(lossFunc = compute_td_loss)
+# Economy_B1$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)
 
 # remove initial periods
-History <- Economy_B1$EpisodeHistory[25:length(Economy_B1$EpisodeHistory)]
+History <- Economy_N1$EpisodeHistory[50:length(Economy_N1$EpisodeHistory)]
 
 # calculate recessions
 output <- History %>%
@@ -21,7 +21,7 @@ output <- History %>%
   map("output") %>%
   reduce(c)
 
-Recessions <- findRecessions(output, streak = 2)
+Recessions <- findRecessions(output, streak = 3)
 
 # output plot
 plotOutput(
@@ -65,8 +65,6 @@ plotOutputBankVar(
   bankReduce = sum, 
   scale_factor = 4,
   recStart = Recessions$recStart, 
-  recEnd = Recessions$recEnd,
-  recStart = Recessions$recStart, 
   recEnd = Recessions$recEnd
 )
 
@@ -74,16 +72,16 @@ plotOutputBankVar(
   History, 
   bankVar = "deposits", 
   bankReduce = sum, 
-  scale_factor = 1,
+  scale_factor = 0.1,
   recStart = Recessions$recStart, 
   recEnd = Recessions$recEnd
 )
 
 plotOutputBankVar(
   History, 
-  bankVar = "capital", 
+  bankVar = "reserves", 
   bankReduce = sum, 
-  scale_factor = 0.2,
+  scale_factor = 0.04,
   recStart = Recessions$recStart, 
   recEnd = Recessions$recEnd
 )
@@ -101,36 +99,22 @@ tibble(
 
 # propensities
 plotPropensities(
-  net = Economy_B1$DQN$invest$current,
-  x = Economy_B1$InfoSets$Firms[[30]],
+  net = Economy_N1$DQN$firm$current,
+  x = Economy_N1$InfoSets$Firms[[30]],
   variable = "amount_opportunity",
-  vrange = c(0,15), inds = c(1,2)
+  vrange = c(0,15), inds = c(3:12)
 )
 
 plotPropensities(
-  net = Economy_B1$DQN$loanrate$current,
-  x = Economy_B1$InfoSets$Banks[[1]],
+  net = Economy_N1$DQN$bank$current,
+  x = Economy_N1$InfoSets$Banks[[1]],
   variable = "loanRate",
   vrange = c(0,0.5), inds = c(1:5)
 )
 
 plotPropensities(
-  net = Economy_B1$DQN$depositrate$current,
-  x = Economy_B1$InfoSets$Banks[[1]],
-  variable = "depositRate",
-  vrange = c(0,0.5), inds = 1:5
-)
-
-plotPropensities(
-  net = Economy_B1$DQN$approverate$current,
-  x = Economy_B1$InfoSets$Banks[[1]],
-  variable = "approvalRate",
-  vrange = c(0.5,1.5), vlength = 500, inds = 1:5
-)
-
-plotPropensities(
-  net = Economy_B1$DQN$deposit$current,
-  x = Economy_B1$InfoSets$Households[[1]],
-  variable = "depositRate_1",
-  vrange = c(0,0.5), vlength = 500, inds = 7
+  net = Economy_N1$DQN$household$current,
+  x = Economy_N1$InfoSets$Households[[1]],
+  variable = "depositRate_4",
+  vrange = c(0,0.5), vlength = 500, inds = c(3,7)
 )

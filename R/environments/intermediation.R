@@ -250,7 +250,8 @@ Intermediation <- R6Class(
           deposits  = Deposits,
           banks     = Banks,
           rewards   = self$Rewards,
-          decisions = Decisions
+          decisions = Decisions,
+          queues    = self$Queues
         )
       } else if (type == "full") {
         # add current state to full history
@@ -430,7 +431,14 @@ Intermediation <- R6Class(
         )
         
         if (runif(1) <= resetProb) {
-          self$updateHistory("full")
+          self$updateHistory(
+            Decisions = list(
+              bank = bankActions,
+              firm = firmActions,
+              household = householdActions
+            ),
+            type = "full"
+          )
           self$EpisodeHistory <- list()
           self$reset()
           resetFlag = TRUE

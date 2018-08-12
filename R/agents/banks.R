@@ -405,7 +405,7 @@ Bank <- R6Class(
       if (ncf / application$amount < self$approvalRate) {
         # loan rejected due to bank's own profitability requirements
         return(0)
-      } else if (self$reserves - application$amount < self$loans * self$reserveRatio) {
+      } else if ((self$reserves - application$amount) < (self$loans * self$reserveRatio)) {
         # loan rejected due to insufficient reserves
         return(0)
       } else if (self$capital/self$loans < self$capitalRatio) {
