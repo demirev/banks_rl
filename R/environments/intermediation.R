@@ -51,29 +51,21 @@ Intermediation <- R6Class(
     
     createOptimizer = function() {
       "Initialize the optimizers"
-      self$Optimizer$invest <- optim$Adam(self$DQN$invest$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$borrow <- optim$Adam(self$DQN$borrow$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$deposit <- optim$Adam(self$DQN$deposit$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$withdraw <- optim$Adam(self$DQN$withdraw$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$loanrate <- optim$Adam(self$DQN$loanrate$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$depositrate <- optim$Adam(self$DQN$depositrate$current$parameters(), lr = 0.001, weight_decay = 0.2)
-      self$Optimizer$approverate <- optim$Adam(self$DQN$approverate$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$bank <- optim$Adam(self$DQN$bank$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$firm <- optim$Adam(self$DQN$firm$current$parameters(), lr = 0.001, weight_decay = 0.2)
+      self$Optimizer$household <- optim$Adam(self$DQN$household$current$parameters(), lr = 0.001, weight_decay = 0.2)
       invisible(self)
     },
     
     createBuffer = function(bufferSize) {
       "Initialize the replay buffer"
-      self$Buffer$invest <- ReplayBuffer(bufferSize)
-      self$Buffer$borrow <- ReplayBuffer(bufferSize)
-      self$Buffer$deposit <- ReplayBuffer(bufferSize)
-      self$Buffer$withdraw <- ReplayBuffer(bufferSize)
-      self$Buffer$loanrate <- ReplayBuffer(bufferSize)
-      self$Buffer$depositrate <- ReplayBuffer(bufferSize)
-      self$Buffer$approverate <- ReplayBuffer(bufferSize)
+      self$Buffer$bank <- ReplayBuffer(bufferSize)
+      self$Buffer$firm <- ReplayBuffer(bufferSize)
+      self$Buffer$household <- ReplayBuffer(bufferSize)
       invisible(self)
     },
     
-    stepBank = function(ApproveChanges, LoanChanges, DepositChanges) {
+    stepBank = function(bankActions) { 
       "Steps through banks' actions"
       
       # 0. Check for defaults
@@ -89,12 +81,16 @@ Intermediation <- R6Class(
       self$processLoans()
       
       # 2. Adjust interest on deposits and loans
+      
+      # nn output to the format expeected from bank$adjust...
+      Changes <- getChanges(bankActions)
+      
       pmap(
-        list(self$Banks, LoanChanges, DepositChanges, ApproveChanges),
-        function(bank, loanChange, depositChange, approveChange) {
-          bank$adjustLoans(loanChange)
-          bank$adjustDeposits(depositChange)
-          bank$adjustApprovals(approveChange)
+        list(self$Banks, Changes),
+        function(bank, change) {
+          bank$adjustLoans(change$loanChange)
+          bank$adjustDeposits(change$depositChange)
+          bank$adjustApprovals(change$approveChange)
         }
       )
       
@@ -109,7 +105,7 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    stepFirm = function(Investments, Borrowings) { 
+    stepFirm = function(firmActions) {
       "Steps through firms' actions"
       
       # 0. Projects give capital or default
@@ -119,9 +115,13 @@ Intermediation <- R6Class(
       self$firmsRepay()
       
       # 2. each firm keeps or discards their current opportunity
+      Investments <- map(firmActions, function(x) x[1:2]) # first two slots
+      # represent invest/forgo and cash/loan
       self$firmsInvest(Investments)
       
       # 3. each firm applies for loans for their current investment
+      Borrowings <- map(firmActions, function(x) x[3:length(x)]) # last actions
+      # represent choice of bank for lending
       self$firmsApply(Borrowings)
       
       # 4. firms consume whatever is not invested
@@ -135,12 +135,39 @@ Intermediation <- R6Class(
       invisible(self)
     },
     
-    stepHousehold = function(Withdrawals, Deposits) {  
+    stepHousehold = function(householdActions) {
       "Steps through households' actions"
       
-      # last element corresponds to no action (no withdrawal or deposit) 
-      Withdrawals <- lapply(Withdrawals, function(x) x[-length(x)])
-      Deposits    <- lapply(Deposits, function(x) x[-length(x)])
+      # convert householdActions to the format expected by the
+      # household methods Withdraw and deposit
+      Withdrawals <- map2(
+        householdActions, self$Households,
+        function(action, household) {
+          if (action[1] == 1) { # represents no change in deposits
+            return(rep(0, length(self$Banks)))
+          } else if (action[2] == 1) { # no withdrawal, just deposit in same bnak
+            return(rep(0, length(self$Banks)))
+          } else { # anything else means withdraw from current bank
+            vec <- rep(0, length(self$Banks))
+            vec[which(household$holdings > 0)] <- 1
+            return(vec)
+          }
+        }
+      )
+      
+      Deposits <- map2(
+        householdActions, self$Households,
+        function(action, household) {
+          if (action[2] == 1) { # deposit in same bank as currently
+            vec <- rep(0, length(self$Banks))
+            vec[which(household$holdings > 0)] <- 1
+            return(vec)
+          } else {
+            return(action[4:length(action)]) # these slots
+            # represent deposits in new bank (all 0s allowed)
+          } 
+        }
+      )
       
       # 1. each bank loses withdrawn money
       self$householdsWithdraw(Withdrawals)
@@ -235,6 +262,7 @@ Intermediation <- R6Class(
     
     reset = function() {
       "Resets the economy"
+      cat("-")
       super$reset()
       self$InfoSets = list(Banks = list(), Households = list(), Firms = list())
       self$OldInfoSets = list(Banks = list(), Households = list(), Firms = list())
@@ -254,13 +282,9 @@ Intermediation <- R6Class(
       # reset the economy
       
       Loss <- list(
-        invest = rep(NA, numEpisodes), 
-        borrow = rep(NA, numEpisodes),
-        deposit = rep(NA, numEpisodes),
-        withdraw = rep(NA, numEpisodes),
-        loanrate = rep(NA, numEpisodes),
-        depositrate = rep(NA, numEpisodes),
-        approverate = rep(NA, numEpisodes)
+        bank = rep(NA, numEpisodes), 
+        firm = rep(NA, numEpisodes),
+        household = rep(NA, numEpisodes)
       )
       
       resetFlag <- T
@@ -282,55 +306,36 @@ Intermediation <- R6Class(
           pmap(
             list(
               self$OldInfoSets$Banks, 
-              ApproveChanges, 
-              LoanChanges, 
-              DepositChanges,
+              bankActions,
               self$Rewards$Banks, 
               self$InfoSets$Banks
             ), 
-            function(state, action_a, action_l, action_d, reward, next_state) {
-              self$Buffer$approverate$push(state, which.max(action_a) - 1L, reward, next_state)
-              self$Buffer$loanrate$push(state, which.max(action_l) - 1L, reward, next_state)
-              self$Buffer$depositrate$push(state, which.max(action_d) - 1L, reward, next_state)
+            function(state, action, reward, next_state) {
+              self$Buffer$bank$push(
+                state, 
+                which.max(action) - 1L, 
+                reward, 
+                next_state
+              )
             }
           )
         }
         
         # 1.2 Make decisions
-        self$DQN$approverate$current$eval() # switch networks to eval mode
-        self$DQN$loanrate$current$eval()
-        self$DQN$depositrate$current$eval()
+        self$DQN$bank$current$eval() # switch networks to eval mode
         
-        ApproveChanges <- lapply(
+        bankActions <- lapply(
           self$InfoSets$Banks, 
           function(info) {
-            decision <- self$DQN$approverate$current$act(info, epsilon)
-            vec <- rep(0, 5)
-            vec[decision + 1] <- 1
-            return(vec)
-          }
-        )
-        LoanChanges <- lapply(
-          self$InfoSets$Banks,
-          function(info) {
-            decision <- self$DQN$loanrate$current$act(info, epsilon)
-            vec <- rep(0, 5)
-            vec[decision + 1] <- 1
-            return(vec)
-          }
-        )
-        DepositChanges <- lapply(
-          self$InfoSets$Banks,
-          function(info) {
-            decision <- self$DQN$depositrate$current$act(info, epsilon) 
-            vec <- rep(0, 5)
+            decision <- self$DQN$bank$current$act(info, epsilon)
+            vec <- rep(0, 27)
             vec[decision + 1] <- 1
             return(vec)
           }
         )
         
         # 1.3 Interact with economy
-        self$stepBank(ApproveChanges, LoanChanges, DepositChanges)
+        self$stepBank(bankActions)
         
         # 2. Firms act ----
         
@@ -342,43 +347,36 @@ Intermediation <- R6Class(
           pmap(
             list(
               self$OldInfoSets$Firms, 
-              Investments, 
-              Borrowings, 
+              firmActions, 
               self$Rewards$Firms, 
               self$InfoSets$Firms
             ), 
-            function(state, action_i, action_b, reward, next_state) {
-              self$Buffer$invest$push(state, which.max(action_i) - 1L, reward, next_state)
-              self$Buffer$borrow$push(state, which.max(action_b) - 1L, reward, next_state)
+            function(state, action, reward, next_state) {
+              self$Buffer$firm$push(
+                state, 
+                which.max(action) - 1L, 
+                reward, 
+                next_state
+              )
             }
           )
         }
         
         # 2.2 Make decisions
-        self$DQN$invest$current$eval() # switch networks to eval mode
-        self$DQN$borrow$current$eval()
+        self$DQN$firm$current$eval() # switch networks to eval mode
         
-        Investments <- lapply(
+        firmActions <- lapply(
           self$InfoSets$Firms, 
           function(info) {
-            decision <- self$DQN$invest$current$act(info, epsilon)
-            vec <- c(0, 0)
-            vec[decision + 1] <- 1
-            return(vec)
-          }
-        )
-        Borrowings <- lapply(
-          self$InfoSets$Firms, 
-          function(info) {
-            decision <- self$DQN$borrow$current$act(info, epsilon)
-            vec <- rep(0, length(self$Banks) + 1)
+            decision <- self$DQN$firm$current$act(info, epsilon)
+            vec <- rep(0, 12)
             vec[decision + 1] <- 1
             return(vec)
           }
         )
         
         # 2.3 Interact with economy
-        self$stepFirm(Investments, Borrowings)
+        self$stepFirm(firmActions)
         
         # 3. Households act ----
         
@@ -390,163 +388,97 @@ Intermediation <- R6Class(
           pmap(
             list(
               self$OldInfoSets$Households, 
-              Withdrawals, 
-              Deposits, 
+              householdActions, 
               self$Rewards$Households, 
               self$InfoSets$Households
             ), 
-            function(state, action_w, action_d, reward, next_state) {
-              self$Buffer$withdraw$push(state, which.max(action_w) - 1L, reward, next_state) 
-              self$Buffer$deposit$push(state, which.max(action_d) - 1L, reward, next_state)
+            function(state, action, reward, next_state) {
+              self$Buffer$household$push(
+                state, 
+                which.max(action) - 1L, 
+                reward, 
+                next_state
+              ) 
             }
           )
         }
         
         # 3.2 Make decisions
-        self$DQN$withdraw$current$eval() # switch networks to eval mode
-        self$DQN$deposit$current$eval()
+        self$DQN$household$current$eval() # switch networks to eval mode
         
-        Withdrawals <- lapply(
+        householdActions <- lapply(
           self$InfoSets$Households, 
           function(info) {
-            decision <- self$DQN$withdraw$current$act(info, epsilon)
-            vec <- rep(0, length(self$Banks) + 1) # +1 to allow for inaction 
-            vec[decision + 1] <- 1
-            return(vec)
-          }
-        )
-        Deposits <- lapply(
-          self$InfoSets$Households, 
-          function(info) {
-            decision <- self$DQN$deposit$current$act(info, epsilon)
-            vec <- rep(0, length(self$Banks) + 1)
+            decision <- self$DQN$household$current$act(info, epsilon)
+            vec <- rep(0, 13)
             vec[decision + 1] <- 1
             return(vec)
           }
         )
         
         # 3.3 Interact with economy
-        self$stepHousehold(Withdrawals, Deposits)
+        self$stepHousehold(householdActions)
         
         # update history and reset if needed
         self$updateHistory(
           Decisions = list(
-            approverate = ApproveChanges,
-            loanrate = LoanChanges,
-            depositrate = DepositChanges,
-            withdraw = Withdrawals,
-            deposit = Deposits,
-            borrow = Borrowings,
-            invest = Investments
+            bank = bankActions,
+            firm = firmActions,
+            household = householdActions
           ), 
           type = "episode"
         )
         
         if (runif(1) <= resetProb) {
-          self$reset()
-          resetFlag = TRUE
           self$updateHistory("full")
           self$EpisodeHistory <- list()
+          self$reset()
+          resetFlag = TRUE
         } else {
           resetFlag = FALSE
         }
         
         # 4. GD Step
         if (!fixed) {
-          if (self$Buffer$invest$getLen() > batch_size) {
-            self$DQN$invest$current$train() # switch network to train mode
-            Loss$invest[episode] <- self$loss( 
+          if (self$Buffer$bank$getLen() > batch_size) {
+            self$DQN$bank$current$train() # switch network to train mode
+            Loss$bank[episode] <- self$loss( 
               as.integer(batch_size),
-              self$Buffer$invest,
-              self$DQN$invest$current, 
-              self$DQN$invest$target,
-              self$Optimizer$invest,
+              self$Buffer$bank,
+              self$DQN$bank$current, 
+              self$DQN$bank$target,
+              self$Optimizer$bank,
               self$beta
             )$detach()$numpy()
-            #self$DQN$invest$current$eval() # switch back to eval
           }
-          if (self$Buffer$borrow$getLen() > batch_size) {
-            self$DQN$borrow$current$train()
-            Loss$borrow[episode] <- self$loss(
+          if (self$Buffer$firm$getLen() > batch_size) {
+            self$DQN$firm$current$train()
+            Loss$firm[episode] <- self$loss(
               as.integer(batch_size), 
-              self$Buffer$borrow,
-              self$DQN$borrow$current, 
-              self$DQN$borrow$target,
-              self$Optimizer$borrow,
+              self$Buffer$firm,
+              self$DQN$firm$current, 
+              self$DQN$firm$target,
+              self$Optimizer$firm,
               self$beta
             )$detach()$numpy()
-            #self$DQN$borrow$current$eval()
           }
-          if (self$Buffer$withdraw$getLen() > batch_size) {
-            self$DQN$withdraw$current$train()
-            Loss$withdraw[episode] <- self$loss( 
+          if (self$Buffer$household$getLen() > batch_size) {
+            self$DQN$household$current$train()
+            Loss$household[episode] <- self$loss( 
               as.integer(batch_size),
-              self$Buffer$withdraw,
-              self$DQN$withdraw$current, 
-              self$DQN$withdraw$target,
-              self$Optimizer$withdraw,
+              self$Buffer$household,
+              self$DQN$household$current, 
+              self$DQN$household$target,
+              self$Optimizer$household,
               self$beta
             )$detach()$numpy()
-            #self$DQN$withdraw$current$eval()
-          }
-          if (self$Buffer$deposit$getLen() > batch_size) {
-            self$DQN$deposit$current$train()
-            Loss$deposit[episode] <- self$loss(
-              as.integer(batch_size), 
-              self$Buffer$deposit,
-              self$DQN$deposit$current, 
-              self$DQN$deposit$target,
-              self$Optimizer$deposit,
-              self$beta
-            )$detach()$numpy()
-            #self$DQN$deposit$current$eval()
-          }
-          if (self$Buffer$loanrate$getLen() > batch_size) {
-            self$DQN$loanrate$current$train()
-            Loss$loanrate[episode] <- self$loss(
-              as.integer(batch_size),
-              self$Buffer$loanrate,
-              self$DQN$loanrate$current, 
-              self$DQN$loanrate$target,
-              self$Optimizer$loanrate,
-              self$beta
-            )$detach()$numpy()
-            #self$DQN$loanrate$current$eval()
-          }
-          if (self$Buffer$depositrate$getLen() > batch_size) {
-            self$DQN$depositrate$current$train()
-            Loss$depositrate[episode] <- self$loss(
-              as.integer(batch_size), 
-              self$Buffer$depositrate,
-              self$DQN$depositrate$current, 
-              self$DQN$depositrate$target,
-              self$Optimizer$depositrate,
-              self$beta
-            )$detach()$numpy()
-            #self$DQN$depositrate$current$eval()
-          }
-          if (self$Buffer$approverate$getLen() > batch_size) {
-            self$DQN$approverate$current$train()
-            Loss$approverate[episode] <- self$loss(
-              as.integer(batch_size),
-              self$Buffer$approverate,
-              self$DQN$approverate$current, 
-              self$DQN$approverate$target,
-              self$Optimizer$approverate,
-              self$beta
-            )$detach()$numpy()
-            #self$DQN$approverate$current$eval()
           }
           
           # 5. Update Target Network
           if (episode %% updateFreq == 0) {
-            update_target(self$DQN$invest$current, self$DQN$invest$target)
-            update_target(self$DQN$borrow$current, self$DQN$borrow$target)
-            update_target(self$DQN$deposit$current, self$DQN$deposit$target)
-            update_target(self$DQN$withdraw$current, self$DQN$withdraw$target)
-            update_target(self$DQN$loanrate$current, self$DQN$loanrate$target)
-            update_target(self$DQN$depositrate$current, self$DQN$depositrate$target)
-            update_target(self$DQN$approverate$current, self$DQN$approverate$target)
+            update_target(self$DQN$bank$current, self$DQN$bank$target)
+            update_target(self$DQN$firm$current, self$DQN$firm$target)
+            update_target(self$DQN$household$current, self$DQN$household$target)
           }
         }
         

@@ -7,9 +7,9 @@ source("R/environments/constructor.R")
 source("R/environments/intermediation.R")
 source_python("python/dqn.py")
 
-# Test B1 ------------------------------------------------------------------
+# Test N1 ------------------------------------------------------------------
 # 10 banks
-Banks_B1 <- lapply(
+Banks_N1 <- lapply(
   1:10, 
   function(i) { 
     Bank$new(
@@ -33,7 +33,7 @@ Banks_B1 <- lapply(
 )
 
 # 100 firms
-Firms_B1 <- lapply(
+Firms_N1 <- lapply(
   1:100,
   function(i) {
     Firm$new(
@@ -56,11 +56,11 @@ Firms_B1 <- lapply(
 )
 
 # 500 households
-Households_B1 <- lapply(
+Households_N1 <- lapply(
   1:500,
   function(i) { 
     Household$new(
-      nBanks = length(Banks_B1),
+      nBanks = length(Banks_N1),
       endowment = 100, 
       utilf = logUtility, 
       labor = 1
@@ -68,63 +68,31 @@ Households_B1 <- lapply(
   }
 )
 
-DQN_B1 <- function() {
+DQN_N1 <- function() {
   Network <- list(
-    invest = list(
-      current = DQN(132L, 2L), #$cuda(),
-      target  = DQN(132L, 2L)
+    firm = list(
+      current = DQN(132L, 12L), #$cuda(),
+      target  = DQN(132L, 12L)
     ),
-    borrow = list(
-      current = DQN(132L, 11L),
-      target  = DQN(132L, 11L)
+    household = list(
+      current = DQN(94L, 13L),
+      target  = DQN(94L, 13L)
     ),
-    deposit = list(
-      current = DQN(94L, 11L),
-      target  = DQN(94L, 11L)
-    ),
-    withdraw = list(
-      current = DQN(94L, 11L),
-      target  = DQN(94L, 11L)
-    ),
-    loanrate = list(
-      current = DQN(91L, 5L),
-      target  = DQN(91L, 5L)
-    ),
-    depositrate = list(
-      current = DQN(91L, 5L),
-      target  = DQN(91L, 5L)
-    ),
-    approverate = list(
-      current = DQN(91L, 5L),
-      target  = DQN(91L, 5L)
+    bank = list(
+      current = DQN(91L, 27L),
+      target  = DQN(91L, 27L)
     )
   )
   Indices <- list(
-    invest = list(
+    firm = list(
       current = c(1,4,7),
       target  = c(1,4,7)
     ),
-    borrow = list(
+    household = list(
       current = c(1,4,7),
       target  = c(1,4,7)
     ),
-    deposit = list(
-      current = c(1,4,7),
-      target  = c(1,4,7)
-    ),
-    withdraw = list(
-      current = c(1,4,7),
-      target  = c(1,4,7)
-    ),
-    loanrate = list(
-      current = c(1,4,7),
-      target  = c(1,4,7)
-    ),
-    depositrate = list(
-      current = c(1,4,7),
-      target  = c(1,4,7)
-    ),
-    approverate = list(
+    bank = list(
       current = c(1,4,7),
       target  = c(1,4,7)
     )
@@ -132,21 +100,21 @@ DQN_B1 <- function() {
   return(list(Network = Network, Indices = Indices))
 }
 
-Economy_B1 <- Intermediation$new(
-  "R/experiments/B1.RDS",
-  firms = Firms_B1, 
-  banks = Banks_B1, 
-  households = Households_B1,
-  dqnGen = DQN_B1, 
+Economy_N1 <- Intermediation$new(
+  "R/experiments/N1.RDS",
+  firms = Firms_N1, 
+  banks = Banks_N1, 
+  households = Households_N1,
+  dqnGen = DQN_N1, 
   lossFunction = compute_td_loss, 
   bufferSize = 2000L,
   productionFunction = CobbDouglass$new(),
   depreciation = 1
 )
 
-#debug(Economy_B1$train)
-Loss <- Economy_B1$train(
-  numEpisodes = 15*1024, 
+#debug(Economy_N1$train)
+Loss <- Economy_N1$train(
+  numEpisodes = 10*1024, 
   resetProb = 0.004, 
   verbose = 1, 
   saveEvery = 256, 
@@ -154,6 +122,6 @@ Loss <- Economy_B1$train(
 )
 
 # To reload:
-# Economy_B1 <- readRDS("R/experiments/B1.RDS")
-# Economy_B1$reload(lossFunc = compute_td_loss)
-# Economy_B1$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)
+# Economy_N1 <- readRDS("R/experiments/N1.RDS")
+# Economy_N1$reload(lossFunc = compute_td_loss)
+# Economy_N1$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)

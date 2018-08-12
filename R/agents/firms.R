@@ -606,30 +606,27 @@ Firm <- R6Class(
     
     borrow = function(decision) {
       "Firms choose to which bank to apply"
-      if (!(nrow(self$application) == 0)) { 
-        if (!is.na(self$application$bank) & self$application$bank == -1) { 
-          # no need for borrowing in the first place
-          self$application <- self$opportunity[0, ]
-        } else if (decision[length(decision)] == 1) {
-          # last slot means apply to no bank at all
-          self$application <- self$opportunity[0, ]
-        } else {
-          # choose bank to apply to
-          self$application$bank <- which(decision == 1)
-        }
+      if (!(nrow(self$application) == 0)) {
+        self$application$bank <- which(decision == 1)
       }
       invisible(self)
     },
     
     invest = function(decision) { 
       "Firm chooses whether to discard or keep opportunity"
-      if (decision[2] == 1) {
+      # decision is a 2-vector. If element 1 is '1' then it means forgo project.
+      # if element 2 is '1' it means invest with cash. If both are '0' it means
+      # apply for loan
+      if (decision[1] == 1) {
+        # firm chooses to forgo opportunity and consume the cash
+        self$application <- self$opportunity[0, ]
+      } else if (decision[2] == 1) {
         # firm chooses to pursue current opportunity (and pays the price)
-        self$application <- self$opportunity
+        self$application <- self$opportunity[0, ]
         
-        if (self$cash >= self$application$amount) {
+        if (self$cash >= self$opportunity$amount) { 
           # firm can pay alone
-          self$application <- self$application %>%
+          opportunity <- self$opportunity %>%
             mutate(
               bank = -1, # no bank
               interest = 0,
@@ -639,19 +636,16 @@ Firm <- R6Class(
             )
           self$Projects <- bind_rows(
             self$Projects,
-            self$application
+            opportunity
           )
-          self$cash <- self$cash - self$application$amount
-          self$application <- self$opportunity[0, ]
+          self$cash <- self$cash - self$opportunity$amount
         } else {
-          # firm pays part of the project and applies for loan
-          self$application$amount <- self$application$amount - self$cash
+          # firm cannot pay - loses both project and money
           self$cash <- 0
         }
-        
       } else {
-        # firm chooses to forgo opportunity and consume the cash
-        self$application <- self$opportunity[0, ]
+        # firm applies for loan
+        self$application <- self$opportunity
       }
       
       # draw new opportunity

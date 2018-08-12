@@ -57,6 +57,23 @@ calcIncrement <- function(decision) {
   return(ind - midpoint)
 }
 
+getChanges <- function(bankActions, n = 1) {
+  "Convert a bank action index to three vectors of price changes"
+  grid <- expand.grid(
+    loanChange = -n:n, 
+    depositChange = -n:n, 
+    approveChange = -n:n
+  )
+  bankActions %>% 
+    map(function(action){
+      list(
+        loanChange = grid$loanChange[which(action == 1)], 
+        depositChange = grid$depositChange[which(action == 1)], 
+        approveChange = grid$approveChange[which(action == 1)]
+      )
+    })
+}
+
 CobbDouglass <- R6Class(
   "A Cobb-Douglass Production Function",
   public = list(
@@ -88,6 +105,7 @@ CobbDouglass <- R6Class(
 )
 
 findPropensity <- function(net, x, variable, vrange, vlength = 400, ind = 1) {
+  "Find how Q values dchange with some input"
   net$eval()
   toTorch <- function(x) Variable(torch$FloatTensor(np$float32(t(as.matrix(x)))))
   seq(vrange[1], vrange[2], length.out = vlength) %>%
@@ -98,15 +116,9 @@ findPropensity <- function(net, x, variable, vrange, vlength = 400, ind = 1) {
       }
     )
 } 
-# findPropensity(
-#   net = Economy_B1$DQN$invest$current, 
-#   x = Economy_B1$InfoSets$Firms[[20]], 
-#   variable = "amount_opportunity", 
-#   vrange = c(0,15), ind = c(1,2)
-# ) 
 
 findRecessions <- function(output, streak = 2) {
-  
+  "Identify recession starts and ends"
   outputDecrease = (diff(output) < 0)
   outputIncrease = (diff(output) > 0)
   
@@ -142,6 +154,7 @@ findRecessions <- function(output, streak = 2) {
 }
 
 countWithdrawals <- function(History, whch = 1, zeroToNa = T) {
+  "Count withdrawals from a certain bank"
   counts <- History %>% 
     map("decisions") %>% 
     map("withdraw") %>%
@@ -158,6 +171,7 @@ countWithdrawals <- function(History, whch = 1, zeroToNa = T) {
 }
 
 countDefaults <- function(History, zeroToNa = T) {
+  "Count the defaults of a certain bank"
   counts <- History %>%
     map("banks") %>%
     map("defaultCounter") %>%

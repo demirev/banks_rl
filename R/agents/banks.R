@@ -372,8 +372,7 @@ Bank <- R6Class(
     
     adjustLoans = function(decision) {
       "Increments the interest rate on loans up or down"
-      increment <- calcIncrement(decision)
-      self$loanRate <- self$loanRate + self$loanIncrement * increment
+      self$loanRate <- self$loanRate + self$loanIncrement * decision
       
       if (self$loanRate <= 0.001) self$loanRate <- 0.001
       invisible(self)
@@ -381,9 +380,7 @@ Bank <- R6Class(
     
     adjustDeposits = function(decision) {
       "Increments the interest rate on deposits up or down"
-      
-      increment <- calcIncrement(decision)
-      self$depositRate <- self$depositRate + self$depositIncrement * increment
+      self$depositRate <- self$depositRate + self$depositIncrement * decision
       
       if (self$depositRate <= 0.001) self$depositRate <- 0.001
       invisible(self)
@@ -391,9 +388,7 @@ Bank <- R6Class(
     
     adjustApprovals = function(decision) {
       "Increments the cut-off FCF/Loan ratio"
-      
-      increment <- calcIncrement(decision)
-      self$approvalRate <- self$approvalRate + self$approvalIncrement * increment 
+      self$approvalRate <- self$approvalRate + self$approvalIncrement * decision
       
       if (self$approvalRate <= 0.001) self$approvalRate <- 0.001
       invisible(self)
