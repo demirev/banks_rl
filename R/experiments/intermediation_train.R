@@ -1,5 +1,5 @@
 source("R/setup.R")
-source("R/utils.R")
+source("R/functions/utils.R")
 source("R/agents/banks.R")
 source("R/agents/firms.R")
 source("R/agents/households.R")

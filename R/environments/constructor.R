@@ -85,3 +85,34 @@ EconomyConstructor <- R6Class(
     
   )
 )
+
+CobbDouglass <- R6Class(
+  "A Cobb-Douglass Production Function",
+  public = list(
+    productivity = NULL,
+    capital_share = NULL,
+    shock_mean = 0,
+    shock_sd   = 0,
+    
+    initialize = function(capital_share = 0.3, productivity = 1) {
+      self$productivity <- productivity
+      self$capital_share <- capital_share
+    },
+    
+    shock = function() {
+      self$productivity <- self$productivity * rlnorm(1, self$shock_mean, self$shock_sd)
+    },
+    
+    produce = function(K, L) { 
+      return(self$productivity * K^self$capital_share * L^(1 - self$capital_share))
+    },
+    
+    rate = function(K, L) {
+      return(self$capital_share * self$productivity * K^(self$capital_share - 1) * L^(1 - self$capital_share))
+    },
+    
+    wage = function(K, L) {
+      return((1 - self$capital_share) * self$productivity * K^self$capital_share * L^(-self$capital_share))
+    }
+  )
+)
