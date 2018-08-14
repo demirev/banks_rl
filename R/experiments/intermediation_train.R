@@ -14,9 +14,9 @@ Banks_N1 <- lapply(
   function(i) { 
     Bank$new(
       approvalRate = 1,
-      depositRate = 0.09,
+      depositRate = 0.03,
       deposits = 0,
-      loanRate = 0.12,
+      loanRate = 0.04,
       loans = 0,
       capital = 1200,
       reserves = 1200,

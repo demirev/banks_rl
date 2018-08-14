@@ -148,30 +148,30 @@ findRecessions <- function(output, streak = 2) {
     reduce(c)
   
   tibble(
-    recStart = decreases,
-    recEnd = endPoints
+    start = decreases,
+    end = endPoints
   ) %>%
-    filter(!duplicated(recEnd))
+    filter(!duplicated(end)) %>%
+    mutate(duration = end - start)
 }
 
-countWithdrawals <- function(History, whch = 1, zeroToNa = T) {
+countWithdrawals <- function(History, zeroToNa = FALSE) {
   "Count withdrawals from a certain bank"
   counts <- History %>% 
     map("decisions") %>% 
-    map("withdraw") %>%
+    map("household") %>%
     map(function(x) {
-      reduce(x, rbind) %>% colSums
+      x %>%
+        map(function(y) (y[1] != 1) & (y[2] != 1)) %>%
+        reduce(sum)
     }) %>%
-    reduce(rbind) %>%
-    (function(x) {
-      x[ ,whch]
-    })
+    reduce(c)
   
   if (zeroToNa) counts[counts == 0] <- NA
   counts
 }
 
-countDefaults <- function(History, zeroToNa = T) {
+countDefaults <- function(History, zeroToNa = TRUE) {
   "Count the defaults of a certain bank"
   counts <- History %>%
     map("banks") %>%
@@ -181,5 +181,112 @@ countDefaults <- function(History, zeroToNa = T) {
   
   if (zeroToNa) counts[counts == 0] <- NA
   counts
+}
+
+deriveTimeSeries <- function(History, reverseUtil = exp) {
+  "Take a history object and derive some key economic time series"
+  output <- History %>%
+    map("macro") %>%
+    map("output") %>%
+    reduce(c)
+  
+  capital <- History %>%
+    map("macro") %>%
+    map("capital") %>%
+    reduce(c)
+  
+  wage <- History %>%
+    map("macro") %>%
+    map("wage") %>%
+    reduce(c)
+  
+  rate <- History %>%
+    map("macro") %>%
+    map("rate") %>%
+    reduce(c)
+  
+  depositRate <- History %>%
+    map("banks") %>%
+    map("depositRate") %>%
+    map(mean) %>%
+    reduce(c)
+  
+  loanRate <- History %>%
+    map("banks") %>%
+    map("loanRate") %>%
+    map(mean) %>%
+    reduce(c)
+  
+  approvalRate <- History %>%
+    map("banks") %>%
+    map("approvalRate") %>%
+    map(mean) %>%
+    reduce(c)
+  
+  loans <- History %>%
+    map("banks") %>%
+    map("loans") %>%
+    map(sum) %>%
+    reduce(c)
+  
+  deposits <- History %>%
+    map("banks") %>%
+    map("deposits") %>%
+    map(sum) %>%
+    reduce(c)
+  
+  numberWithdrawals <- countWithdrawals(History,FALSE)
+  
+  consumption <- History %>%
+    map("rewards") %>%
+    map(function(periodRewards) {
+      periodRewards %>%
+        map(function(agentRewards){
+          agentRewards %>%
+            map(reverseUtil) %>%
+            reduce(sum)
+        }) %>%
+        reduce(sum)
+    }) %>%
+    reduce(c)
+  
+  allInvestment <- History %>%
+    map("projects") %>%
+    reduce(rbind) %>%
+    distinct(bank, amount, income, income_sd, terminal_income, 
+             terminal_income_sd, liquidation, .keep_all = T) %>%
+    select(c(bank, amount, income, income_sd, terminal_income, 
+             terminal_income_sd, liquidation, duration))
+  
+  investment <- History %>%
+    map("projects") %>%
+    map(function(tb) {
+      tb %>%
+        inner_join(
+          allInvestment, 
+          by = c("bank", "amount", "income", "income_sd", "terminal_income", 
+                 "terminal_income_sd", "liquidation", "duration")
+        ) %>% 
+        select(amount) %>%
+        sum
+    }) %>%
+    reduce(c)
+  
+  return(
+    tibble(
+      output,
+      capital,
+      wage,
+      rate,
+      depositRate,
+      loanRate,
+      approvalRate,
+      deposits,
+      loans,
+      numberWithdrawals,
+      consumption,
+      investment
+    )
+  )
 }
 

@@ -16,6 +16,7 @@ Intermediation <- R6Class(
     OldInfoSets = list(Banks = list(), Households = list(), Firms = list()),
     Rewards = list(Banks = list(), Households = list(), Firms = list()),
     Queues = list(),
+    LossData = NULL, # total loss
     
     initialize = function(
       file,
@@ -488,6 +489,8 @@ Intermediation <- R6Class(
             update_target(self$DQN$firm$current, self$DQN$firm$target)
             update_target(self$DQN$household$current, self$DQN$household$target)
           }
+          
+          self$LossData <- Loss
         }
         
         if (verbose == 1) {
