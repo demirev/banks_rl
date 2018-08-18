@@ -206,6 +206,8 @@ deriveTimeSeries <- function(History, reverseUtil = exp) {
   
   numberWithdrawals <- countWithdrawals(History,FALSE)
   
+  numberDefaults <- countDefaults(History, FALSE)
+  
   consumption <- History %>%
     map("rewards") %>%
     map(function(periodRewards) {
@@ -237,7 +239,9 @@ deriveTimeSeries <- function(History, reverseUtil = exp) {
                  "terminal_income_sd", "liquidation", "duration")
         ) %>% 
         select(amount) %>%
-        sum
+        (function(x) {
+          sum(x$amount)
+        })
     }) %>%
     reduce(c)
   
@@ -253,6 +257,7 @@ deriveTimeSeries <- function(History, reverseUtil = exp) {
       deposits,
       loans,
       numberWithdrawals,
+      numberDefaults,
       consumption,
       investment
     )

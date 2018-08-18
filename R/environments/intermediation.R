@@ -266,6 +266,7 @@ Intermediation <- R6Class(
       "Resets the economy"
       cat("-")
       super$reset()
+      self$EpisodeHistory <- list()
       self$InfoSets = list(Banks = list(), Households = list(), Firms = list())
       self$OldInfoSets = list(Banks = list(), Households = list(), Firms = list())
       self$Rewards = list(Banks = list(), Households = list(), Firms = list())
@@ -440,7 +441,6 @@ Intermediation <- R6Class(
             ),
             type = "full"
           )
-          self$EpisodeHistory <- list()
           self$reset()
           resetFlag = TRUE
         } else {
@@ -909,5 +909,86 @@ Intermediation <- R6Class(
       invisible(self)
     }
     ####
+  )
+)
+
+IntermediationGuarantee <- R6Class(
+  inherit = Intermediation,
+  public = list(
+    tax = 0,
+    
+    produce = function() { 
+      "Production takes place"
+      
+      # aggregate inputs
+      capital <- self$Firms %>%
+        map("capital") %>%
+        reduce(sum)
+      
+      labor <- self$Households %>%
+        map("labor") %>%
+        reduce(sum)
+      
+      # carry out production
+      self$ProductionFunction$shock()
+      
+      self$output <- self$ProductionFunction$produce(capital, labor)
+      self$wage <- self$ProductionFunction$wage(capital, labor) - self$tax # deduct tax
+      self$rate <- self$ProductionFunction$rate(capital, labor)
+      
+      if (self$wage < 0) self$wage <- 0 # not the most elegant way but this
+      # shouldn't happen at all
+      
+      # give out factor products (and depreciate)
+      self$Households %>%
+        map(function(household) {
+          household$receiveWage(self$wage)
+        })
+      
+      self$Firms %>%
+        map(function(firm) {
+          firm$receiveRate(self$rate, self$depreciation)
+        })
+      
+      invisible(self)
+    },
+    
+    bankDefaults = function(Outcomes) { 
+      "Resolves pottential bank defaults"
+      
+      # reset bank balances
+      lostDeposits <- self$Banks %>% 
+        map2(Outcomes, function(bank,outcome) {
+          if (as.logical(outcome)) {
+            lostDeposits <- bank$deposits
+            bank$reset()
+            return(lostDeposits)
+          } else {
+            return(0)
+          }
+        }) %>%
+        reduce(sum)
+      
+      # households get back their deposit in the form of a gurantee
+      self$Households %>%
+        map(
+          function(household) {
+            household$receiveWithdrawal(Outcomes, distress = 1)
+          }
+        )
+      
+      # set a tax to pay back the defaults
+      self$tax <- lostDeposits / length(self$Households)
+      
+      # reduce firms' borrowing
+      self$Firms %>%
+        map(
+          function(firm) {
+            firm$bankDefaults(Outcomes == 1)
+          }
+        )
+      
+      invisible(self) 
+    }
   )
 )

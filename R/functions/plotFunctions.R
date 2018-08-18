@@ -7,7 +7,7 @@ linePlot <- function(
   xvar = "period",
   split = "series",
   title = "",
-  colp = c("blue","darkblue"),
+  colp = c("blue","orange"),
   recStart = 0,
   recEnd = 0
 ) {
@@ -52,7 +52,7 @@ linePlot2 <- function(
   xvar = "period",
   title = "",
   second_namme = yvar2,
-  colp = c("blue","darkblue"),
+  colp = c("blue","orange"),
   recStart = 0,
   recEnd = 0
 ) {
@@ -104,7 +104,7 @@ linePlotDots <- function(
   xvar = "period",
   title = "",
   second_namme = yvar2,
-  colp = c("blue","darkblue"),
+  colp = c("blue","orange"),
   recStart = 0,
   recEnd = 0
 ) {
