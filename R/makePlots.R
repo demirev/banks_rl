@@ -290,13 +290,22 @@ tibble(
   )
 
 # experiment 2 ------------------------------------------------------------
-History_R <- paste0("R/experiments/R",1:5,".RDS") %>%
-  map(readRDS) %>%
-  map(function(x) x$EpisodeHistory[50:length(x$EpisodeHistory)])
+History_R <- list()
+R1 <- readRDS("R/experiments/R1.RDS")
+R2 <- readRDS("R/experiments/R2.RDS")
+R3 <- readRDS("R/experiments/R3.RDS")
+R4 <- readRDS("R/experiments/R4.RDS")
+R5 <- readRDS("R/experiments/R5.RDS")
+
+History_R[[1]] <- R1$EpisodeHistory[900:length(TT$EpisodeHistory)]
+History_R[[2]] <- R2$FullHistory[[4]][600:length(TT$FullHistory[[4]])]
+History_R[[3]] <- R3$EpisodeHistory[300:length(TT$EpisodeHistory)]
+History_R[[4]] <- R4$FullHistory[[4]][1000:length(TT$FullHistory[[4]])]
+History_R[[5]] <- R5$EpisodeHistory[30:length(TT$EpisodeHistory)]
 
 Series_R <- History_R %>%
   map(deriveTimeSeries) %>%
-  map(function(x) x[50:nrow(x), ])
+  map(function(x) x[20:nrow(x), ])
 
 Series_R[[1]]$reserveRatio <- 0.04
 Series_R[[2]]$reserveRatio <- 0.08
@@ -306,48 +315,69 @@ Series_R[[5]]$reserveRatio <- 0.20
 
 Data_R <- Series_R %>% reduce(rbind)
 
-lm(deposits ~ lag(deposits) + lag(loans) + 
-     lag(numberWithdrawals) +  lag(numberDefaults) + 
-     lag(consumption) + reserveRatio, data = Data_R, subset = Data_R$reserveRatio != 0.08) %>%
+lm(deposits ~ . - wage, data = Data_R) %>%
+  summary
+lm(output ~ reserveRatio, data = Data_R) %>% summary  
+lm(consumption ~ reserveRatio, data = Data_R) %>% summary  
+
+lm(output ~ lag(output) + lag(capital) + lag(depositRate) + lag(loanRate) + lag(rate) +
+     lag(deposits) + lag(loans) + lag(numberWithdrawals) +
+     lag(numberDefaults) + lag(consumption) + lag(investment) + 
+     I(reserveRatio > 0.04), data = Data_R) %>%
   summary
 
-# output vs bank defaults
-# tibble(
-#   value = Series$output, 
-#   value2 = countDefaults(History[50:length(History)]),
-#   period = Series$period
-# ) %>% linePlotDots(
-#   scale_factor = 550,
-#   recStart = Recessions$start,
-#   recEnd = Recessions$end
-# )
-# 
-# # propensities
-# plotPropensities(
-#   net = Economy$DQN$firm$current,
-#   x = Economy$InfoSets$Firms[[40]],
-#   variable = "loanRate_3",
-#   vrange = c(0,0.45), inds = c(3,5)
-# )
-# 
-# plotPropensities(
-#   net = Economy$DQN$bank$current,
-#   x = Economy$InfoSets$Banks[[1]],
-#   variable = "depositRate",
-#   vrange = c(0,0.5), inds = c(1:5)
-# )
-# 
-# plotPropensities(
-#   net = Economy$DQN$household$current,
-#   x = Economy$InfoSets$Households[[1]],
-#   variable = "depositRate_2",
-#   vrange = c(0,0.15), vlength = 500, inds = c(1,5)
-# )
+library(PerformanceAnalytics)
+chart.Correlation(
+  select(
+    Data_R, 
+    -wage
+  ), 
+  histogram = TRUE, pch = 19
+)
+
+Data_R %>%
+  group_by(reserveRatio) %>%
+  summarise(sd = sd(deposits), mean = mean(deposits)) %>%
+  ggplot(aes(x = reserveRatio, y = mean)) +
+  geom_line(color = "blue", lwt = 2) +
+  geom_pointrange(aes(ymin = mean - sd, ymax = mean + sd), color = "darkblue")  +
+  labs(x = "required reserves", y = "deposits") +
+  ggtitle("Average Deposits vs Required Reserves") +
+  theme(
+    axis.line = element_line(size = 1, colour = "black"),
+    panel.grid.major = element_line(colour = "#d3d3d3"), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), panel.background = element_blank()
+  ) +
+  theme(
+    plot.title = element_text(size = 14, family = "serif", face = "bold"),
+    text = element_text(family = "serif"),
+    axis.text.x = element_text(colour = "black", size = 10),
+    axis.text.y = element_text(colour = "black", size = 10),
+    legend.key = element_rect(fill = "white", colour = "white")
+  )
 
 
+Data_R %>%
+  group_by(reserveRatio) %>%
+  summarise(sd = sd(depositRate), mean = mean(depositRate)) %>%
+  ggplot(aes(x = reserveRatio, y = mean)) +
+  geom_line(color = "blue", lwt = 2) +
+  geom_pointrange(aes(ymin = mean - sd, ymax = mean + sd), color = "darkblue")  +
+  labs(x = "required reserves", y = "depositRate") +
+  ggtitle("Average depositRate vs Required Reserves") +
+  theme(
+    axis.line = element_line(size = 1, colour = "black"),
+    panel.grid.major = element_line(colour = "#d3d3d3"), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), panel.background = element_blank()
+  ) +
+  theme(
+    plot.title = element_text(size = 14, family = "serif", face = "bold"),
+    text = element_text(family = "serif"),
+    axis.text.x = element_text(colour = "black", size = 10),
+    axis.text.y = element_text(colour = "black", size = 10),
+    legend.key = element_rect(fill = "white", colour = "white")
+  )
 
-sss <- paste0("R/experiments/R2s2.RDS") %>%
-  readRDS %>%
-  (function(x) x$EpisodeHistory[50:length(x$EpisodeHistory)]) %>%
-  deriveTimeSeries %>%
-  (function(x) x[50:nrow(x), ])
+Data_R %>% group_by(reserveRatio) %>% summarise_all(c("mean" = mean, "sd" = sd))
