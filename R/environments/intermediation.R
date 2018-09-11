@@ -294,7 +294,7 @@ Intermediation <- R6Class(
       
       # train
       for (episode in 1:numEpisodes) {
-        epsilon <- generateEpsilon(episode) * (!fixed) # no exploration if no training
+        epsilon <- generateEpsilon(episode) #* (!fixed) # no exploration if no training
         
         # 0. Productions takes place
         self$produce()
