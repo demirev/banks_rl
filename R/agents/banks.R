@@ -130,18 +130,18 @@ Bank <- R6Class(
       }
       
       # check if paying divident will violate capital requirements
-      if (self$capital/self$loans < self$capitalRatio) {
+      if (self$loans != 0 & self$capital/self$loans < self$capitalRatio) {
         return(self$utilf(0))
-      } else if ((1 - self$dividentRatio)*self$capital/self$loans < self$capitalRatio) {
+      } else if (self$loans != 0 & (1 - self$dividentRatio)*self$capital/self$loans < self$capitalRatio) {
         divident <- self$capital - self$loans * self$capitalRatio
       } else {
         divident <- self$dividentRatio * self$capital
       }
       
       # check if paying divident will violate reserve requirements
-      if (self$reserves/self$loans < self$reserveRatio) {
+      if (self$loans != 0 & self$reserves/self$loans < self$reserveRatio) {
         return(self$utilf(0))
-      } else if ((self$reserves - divident)/self$loans < self$reserveRatio) {
+      } else if (self$loans != 0 & (self$reserves - divident)/self$loans < self$reserveRatio) {
         divident <- self$reserves - self$loans * self$reserveRatio
       }
       
