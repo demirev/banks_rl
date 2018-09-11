@@ -1,11 +1,4 @@
 source("R/setup.R")
-source("R/functions/utils.R")
-source("R/agents/banks.R")
-source("R/agents/firms.R")
-source("R/agents/households.R")
-source("R/environments/constructor.R")
-source("R/environments/intermediation.R")
-source_python("python/dqn.py")
 
 # Test N1 ------------------------------------------------------------------
 # 10 banks
