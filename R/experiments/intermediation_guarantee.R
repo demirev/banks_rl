@@ -105,6 +105,9 @@ Economy_G1 <- IntermediationGuarantee$new(
   depreciation = 1
 )
 
+Economy_G1$dqnData <- readRDS("R/experiments/N1.RDS")$dqnData # hot start
+Economy_G1$reload(lossFunc = compute_td_loss)
+
 #debug(Economy_G1$train)
 Loss <- Economy_G1$train(
   numEpisodes = 10*1024, 
