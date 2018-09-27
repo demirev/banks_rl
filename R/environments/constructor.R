@@ -1,3 +1,76 @@
+#' A consturctor class for simulated economies
+#' 
+#' @section Fields:
+#' 
+#' \code{Households} A list of Household agents
+#' 
+#' \code{Banks} A list of Bank agents
+#' 
+#' \code{Firms} A lsit of Firm agents
+#' 
+#' \code{DQN} A list of deep Q networks
+#' 
+#' \code{Buffer} A replay buffer
+#' 
+#' \code{Optimizer} Optimizers for the deep q networks
+#' 
+#' \code{loss} A loss function for training the DQNs
+#' 
+#' \code{beta} Discount factor shared among all agents
+#' 
+#' \code{reset_hhl} A copy of the initial list of households - used when 
+#' resetting
+#' 
+#' \code{reset_bnk} A copy of the initial list of banks - used when 
+#' resetting
+#' 
+#' \code{reset_frm} A copy of the initial list of firms - used when 
+#' resetting
+#' 
+#' \code{FullHistory} A list of tracked variables over simulated episodes
+#' 
+#' \code{EpisodeHistory} A list of tracked variables for the last episod
+#' 
+#' @section Methods:
+#' \code{
+#' $new(
+#'   households = list(), 
+#'   banks = list(), 
+#'   firms = list(),
+#'   dqns, 
+#'   lossFunction, 
+#'   bufferSize = 1000
+#' )} Initialize the economy with a list of agents (for each type of agent), 
+#' a list of neural networks, a 
+#' loss function for the neural network training, buffer size for the replay
+#' buffer, and a depreciation rate.
+#' 
+#' \code{$createOptimizer()} Create optimiers for each network.
+#' 
+#' \code{$createBuffer(bufferSize)} Create replay buffers for each agent.
+#' 
+#' \code{$step()} Step through a period of the simulation
+#' 
+#' \code{$updateHistory(Decisions, type)} Keep a track of the history of the
+#' simulation.
+#' 
+#' \code{$reset()} Reset the economy to its initial state.
+#' 
+#' \code{$train(
+#'    numEpisodes = 10000,
+#'    resetProb = 0.001, 
+#'    batch_size = 256,
+#'    updateFreq = 200,
+#'    verbose = 0,
+#'    saveEvery = 0,
+#'   fixed = FALSE
+#' )} Train and simulate the economy. This process consists of iteratively 
+#' taking decisions, acting out these decision, recording the consequences, 
+#' and updating the policies.
+#' 
+#' @name EconomyConstructor
+
+
 EconomyConstructor <- R6Class(
   "Methods and fields shared among classes",
   public = list(
@@ -85,6 +158,35 @@ EconomyConstructor <- R6Class(
     
   )
 )
+
+#' A Cobb Douglas production function
+#' 
+#' Y = A times K^{alpha} times L^{1-alpha}
+#' 
+#' @section Fields:
+#' 
+#' \code{productivity} "A" in the formula above
+#' 
+#' \code{capital_share} "alpha" in the formula above
+#' 
+#' \code{shock_mean} Mean of the shock process
+#' 
+#' \code{shock_sd} SD of the shock process
+#' 
+#' @section Methods:
+#' \code{$new(capital_share = 0.3, productivity = 1)} Initialize the production 
+#' function
+#' 
+#' \code{$shock()} Shock the productivity
+#' 
+#' \code{$produce(K,L)} Return "Y"
+#' 
+#' \code{$rate(K,L)} Return the wage
+#' 
+#' \code{$wage(K,L)} Return the rate on capital
+#' 
+#' @name CobbDouglass
+
 
 CobbDouglass <- R6Class(
   "A Cobb-Douglass Production Function",

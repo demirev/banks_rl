@@ -1,3 +1,124 @@
+#' A class representing a simulated economy
+#' 
+#' @inheritParams EconomyConstructor
+#' 
+#' @section Fields:
+#' \code{file} A string indicating the file to which to save periodic backups
+#' 
+#' \code{households} A list of Household agents
+#' 
+#' \code{banks} A list of Bank agents
+#' 
+#' \code{firms} A lsit of Firm agents
+#' 
+#' \code{productionFunction} A production function class, that can return 
+#' outcome, wage, and rate of return to capital
+#' 
+#' \code{depreciation} The depreciation rate of capital
+#' 
+#' \code{dqnGen} A function generating the deep q networks
+#' 
+#' \code{dqnInd} A function containing the indices for accessing the weights
+#' of the networks
+#' 
+#' \code{dqnData} Saved network weights
+#' 
+#' \code{InfoSets} A list of state vectors to be used for the decision making
+#' of each individual agent
+#' 
+#' \code{OldInfoSets} A copy of the state vectors from the previous period - 
+#' needed for Q updates
+#' 
+#' \code{Rewards} A list of utility earned by each agent.
+#' 
+#' \code{Queues} A list combinign the loan queues of all banks.
+#' 
+#' \code{LossData} Saved data from training loss
+#' 
+#' @section Methods:
+#' \code{
+#' $new(
+#'   file,
+#'   households = list(), 
+#'   banks = list(), 
+#'   firms = list(),
+#'   dqnGen, 
+#'   productionFunction = CobbDouglass$new(),
+#'   lossFunction, 
+#'   bufferSize = 1000,
+#'   depreciation = 1
+#' )} Initialize the economy with a list of agents (for each type of agent), 
+#' a function for generating the neural networks, a production function, a 
+#' loss function for the neural network training, buffer size for the replay
+#' buffer, and a depreciation rate.
+#' 
+#' \code{$createOptimizer()} Create optimiers for each network.
+#' 
+#' \code{$createBuffer(bufferSize)} Create replay buffers for each agent.
+#' 
+#' \code{$stepBank(bankActions)} Given a list of bank actions, taka a 'step' (
+#' ie resolve the actions). This includes resolving potential defaults, setting
+#' new prices, and paying out dividents.
+#' 
+#' \code{$stepFirm(firmActions)} Given a list of firm actions, take a 'step' (
+#' ie resolve the actions). This includes resolving project outcomes, dsicarding
+#' or taking on projects, applying for loans, receiving the banks decision and
+#' rolling out approvals, and finally consuming left over cash.
+#' 
+#' \code{$stepHousehold(householdActions)} Given a list of household actions,
+#' take a 'step; (ie resolve the actions). This includes withdrawing deposits,
+#' making new ones, receiving interest, and finally consuming leftover cash.
+#' 
+#' \code{$updateHistory(Decisions, type)} Keep a track of the history of the
+#' simulation.
+#' 
+#' \code{$reset()} Reset the economy to its initial state.
+#' 
+#' \code{$train(
+#'    numEpisodes = 10000,
+#'    resetProb = 0.001, 
+#'    batch_size = 256,
+#'    updateFreq = 200,
+#'    verbose = 0,
+#'    saveEvery = 0,
+#'   fixed = FALSE
+#' )} Train and simulate the economy. This process consists of iteratively 
+#' taking decisions, acting out these decision, recording the consequences, 
+#' and updating the policies.
+#' 
+#' \code{$getInfoSet(type)} Generate state (or observation) vectors to be used
+#' in decision making
+#' 
+#' \code{$getEconomyState()} Returns a named state vector for the aggregate
+#' state of the economy.
+#' 
+#' \code{$produce()} Taking all available capital and labor carry out production
+#' and calculate wages and returns.
+#' 
+#' \code{$bankDefaults(Outcomes)} Resolve bank defeaults
+#' 
+#' \code{$processLoans()} Process loans
+#' 
+#' \code{$firmsResolveProjects()} Firms resolve their projects
+#' 
+#' \code{$firmsRepay()} Firms repay banks
+#' 
+#' \code{$firmsApply(Borrowings)} Firms apply for loans
+#' 
+#' \code{$firmsInvest(Investments)} Firms invest
+#' 
+#' \code{$householdsWithdraw(Withdrawals)} Households withdraw deposits
+#' 
+#' \code{$householdDeposit(Deposits)} Households deposit cash
+#' 
+#' \code{$saveWeights()} Save the network weights to an R object
+#' 
+#' \code{$loadWeights()} Load network weights form an R object
+#' 
+#' \code{$reload(lossFunc, bufferSize)} Reload all python related objects
+#' 
+#' @name Intermediation
+
 Intermediation <- R6Class(
   "An Economy with autonomous firms, savers, and banks",
   inherit = EconomyConstructor,
