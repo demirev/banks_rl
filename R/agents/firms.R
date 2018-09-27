@@ -1,3 +1,56 @@
+#' A class for generating projcet opportunities for firms
+#' 
+#' @section Fields:
+#' \code{duration} A 2-vector indicating the interval to which project durations
+#' must belong
+#' 
+#' \code{amount} A 2-vector indicating the interval to which project loan amount
+#' must belong
+#' 
+#' \code{income} A 2-vector indicating the interval to which project incomes
+#' must belong
+#' 
+#' \code{income_sd} A 2-vector indicating the interval to which the 
+#' standard deviation of income per period must belong
+#' 
+#' \code{terminal_income} A 2-vector indicating the interval to which terminal
+#' income of a project must belong
+#'
+#' \code{terminal_icnome_sd} A 2-vector indicating the interval to which
+#' the standard deviation of terminal income must belong
+#' 
+#' \code{default_prob} A 2-vector indicating the interval to which the default
+#' probability (per period) of the project must belong
+#' 
+#' \code{liquidation} A 2-vector indicating the interval to which the 
+#' liquidation multiple of the project must belong.
+#' 
+#' @section Methods:
+#' \code{
+#' $new(
+#'   duration = c(6,20),
+#'   amount   = c(10, 20),
+#'   income   = c(0, 10),
+#'   income_sd = c(0, 1),
+#'   terminal_income = c(0, 8),
+#'   terminal_income_sd = c(0, 1),
+#'   default_prob = c(0, .03),
+#'   liquidation = c(0, 0.6) 
+#' )} Initialize the firm with some initial amounts of the capital and the
+#' consumption goods.
+#' 
+#' \code{$draw()} Generates a 1-row tibble representing a project. The project
+#' is characterized by a duration for which it will be active; a investment
+#' amount required to undertake the project; average per-period income that
+#' the project generates (in terms of the capital good); standard deviation
+#' of this income; terminal incomer that the projects yields upon completion;
+#' standard deviation of this income; a per-period default probability.
+#' All these values are drawn uniformly from the intervals defined above. If a
+#' project defaults it stops paying out income, but any loans taken to finance
+#' it remain outstanding.
+#' 
+#' @name ProjectPool
+
 ProjectPool <- R6Class(
   "Generates investment projects",
   public = list(
@@ -52,6 +105,80 @@ ProjectPool <- R6Class(
     
   )
 )
+
+
+#' A Firm agent
+#' 
+#' Implements a firm in the ABM.
+#'
+#' @section Fields:
+#' \code{capital} The amount of the capital good owned by the firm
+#' 
+#' \code{cash} The amount of the consumption good owned by the firm
+#' 
+#' \code{opportunity} The current project the firm is considering to take on
+#' 
+#' \code{application} The project for which the firm is applying for a loan
+#' 
+#' \code{loans} A tbl with details of each project that the firm has taken up. 
+#' Includes both projects for which the firm has received a loan, and those
+#' financced entirely with its own funds. Includes loan repayment amounts.
+#' 
+#' \code{utilf} The utility function used to convert cash to utils
+#' 
+#' \code{ProjectPool} An instance of the ProjectPool class. Generates new 
+#' investment opportunities for the firm
+#' 
+#' \code{Projects} A tbl with details of projects that the firm has taken up. 
+#' Includes both projects for which the firm has received a loan, and those
+#' financced entirely with its own funds. Includes loan repayment amounts.
+#' 
+#' @section Methods:
+#' \code{
+#' $new(
+#'   nBanks,
+#'   endowment = 100,
+#'   endowment_k = 100,
+#'   utilf = logUtility,
+#'   Pool = ProjectPool$new()
+#' )} Initialize the firm with some initial amounts of the capital and the
+#' consumption goods.
+#' 
+#' \code{consume()} Convert cash to utils
+#' 
+#' \code{getState()} Return a named vector of state information regarding the
+#' firm. Includes holding of cash and capital, as well as a summary of the
+#' projects undertaken by the firm.
+#' 
+#' \code{receiveRate(rate, depreciation)} Given a rate of return on capital and
+#' a depreciation rate, increase the firm's cash by capital*rate and reduce
+#' capital as per the depreciation rate.
+#' 
+#' \code{resolveProject()} Receive income of capital of all active projects.
+#' Income is distributed as per the project's characteristics. Some projects
+#' may default at this stage. Others may run out their lifetime.
+#' 
+#' \code{payInteres(nBanks)} Pays interest to all banks from which the firm 
+#' has taken out loans. The interest is determined at the moment of issue, and
+#' is fixed for the lifetime of the loan.
+#' 
+#' \code{invest(decision)} Given a decision to invest or not, either keep the
+#' current investment opportunity or discard it.
+#' 
+#' \code{borrow(decision)} Given a deicison from which bank to borrow, apply
+#' for a loan for the current opportunity (if not discarded and if cash is
+#' unsufficient to finance the porject).
+#' 
+#' \code{rollProject(bankDecision)} Receive the bank's decision on the loan
+#' application. If the decision is affirmitive, calculate per-period loan 
+#' reapyments and add the application to `Projects`.
+#' 
+#' \code{bankDefaults(bankOutcomes)} Given a vector indicating which bank have
+#' defaulted, set the payments on loans from defaulted banks to zero (don't
+#' repay those loans)
+#' 
+#' @name Firm
+
 Firm <- R6Class(
   "A Firm class for the intermediation environment",
   
@@ -60,7 +187,6 @@ Firm <- R6Class(
     cash        = 0,
     opportunity = NULL,
     application = NULL,
-    loans       = NULL,
     utilf       = NULL,
     ProjectPool = NULL,
     Projects    = NULL,
