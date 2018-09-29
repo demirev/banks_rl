@@ -1,8 +1,8 @@
 source("R/setup.R")
 
-# Test G1 ------------------------------------------------------------------
+# Test G2 ------------------------------------------------------------------
 # 10 banks
-Banks_G1 <- lapply(
+Banks_G2 <- lapply(
   1:10, 
   function(i) { 
     Bank$new(
@@ -11,8 +11,8 @@ Banks_G1 <- lapply(
       deposits = 0,
       loanRate = 0.04,
       loans = 0,
-      capital = 1200,
-      reserves = 1200,
+      capital = 400, # 1200 before
+      reserves = 400,
       capitalRatio = 0.08,
       reserveRatio = 0.10,
       dividentRatio = 0.03,
@@ -26,7 +26,7 @@ Banks_G1 <- lapply(
 )
 
 # 100 firms
-Firms_G1 <- lapply(
+Firms_G2 <- lapply(
   1:100,
   function(i) {
     Firm$new(
@@ -49,11 +49,11 @@ Firms_G1 <- lapply(
 )
 
 # 500 households
-Households_G1 <- lapply(
+Households_G2 <- lapply(
   1:500,
   function(i) { 
     Household$new(
-      nBanks = length(Banks_G1),
+      nBanks = length(Banks_G2),
       endowment = 100, 
       utilf = logUtility, 
       labor = 1
@@ -61,7 +61,7 @@ Households_G1 <- lapply(
   }
 )
 
-DQN_G1 <- function() {
+DQN_G2 <- function() {
   Network <- list(
     firm = list(
       current = DQN(132L, 12L), #$cuda(),
@@ -93,31 +93,31 @@ DQN_G1 <- function() {
   return(list(Network = Network, Indices = Indices))
 }
 
-Economy_G1 <- IntermediationGuarantee$new(
-  "R/experiments/G1.RDS",
-  firms = Firms_G1, 
-  banks = Banks_G1, 
-  households = Households_G1,
-  dqnGen = DQN_G1, 
+Economy_G2 <- IntermediationGuarantee$new(
+  "R/experiments/G2.RDS",
+  firms = Firms_G2, 
+  banks = Banks_G2, 
+  households = Households_G2,
+  dqnGen = DQN_G2, 
   lossFunction = compute_td_loss, 
   bufferSize = 2000L,
   productionFunction = CobbDouglass$new(productivity = 3),
   depreciation = 1
 )
 
-Economy_G1$dqnData <- readRDS("R/experiments/N1.RDS")$dqnData # hot start
-Economy_G1$reload(lossFunc = compute_td_loss)
+Economy_G2$dqnData <- readRDS("R/experiments/N2.RDS")$dqnData # hot start
+Economy_G2$reload(lossFunc = compute_td_loss)
 
-#debug(Economy_G1$train)
-Loss <- Economy_G1$train(
+#debug(Economy_G2$train)
+Loss <- Economy_G2$train(
   numEpisodes = 10*1024, 
   resetProb = 0.001, 
   verbose = 1, 
-  saveEvery = 256, 
+  saveEvery = 512, 
   batch_size = 512
 )
 
 # To reload:
-# Economy_G1 <- readRDS("R/experiments/G1.RDS")
-# Economy_G1$reload(lossFunc = compute_td_loss)
-# Economy_G1$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)
+# Economy_G2 <- readRDS("R/experiments/G2.RDS")
+# Economy_G2$reload(lossFunc = compute_td_loss)
+# Economy_G2$train(numEpisodes = 3, resetProb = 0.004, verbose = 1)

@@ -385,9 +385,9 @@ Economy_R5 <- Intermediation$new(
 )
 
 # pre-load weights
-Economy_N1 <- readRDS("R/experiments/N1_1308.RDS")
-Economy_R1$dqnData <- Economy_N1$dqnData
-rm(Economy_N1)
+Economy_N2 <- readRDS("R/experiments/N2.RDS")
+Economy_R1$dqnData <- Economy_N2$dqnData
+rm(Economy_N2)
 
 Economy_R1$reload(compute_td_loss)
 
