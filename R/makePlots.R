@@ -1,122 +1,136 @@
+#' This script produces all figures, tables and values cited in the paper
+#' 
+
 source("R/setup.R")
+library(PerformanceAnalytics) # correlations plot
 
-# main description --------------------------------------------------------
+# functions ---------------------------------------------------------------
+# output plots
+drawLinePlot <- function(sim_series, sim_recessions) {
+  linePlot(
+    mutate(sim_series, series = "output"), 
+    yvar = "output", xvar = "period", title = "Simulated Output",
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end
+  )
+}
 
-Economy <- readRDS("R/experiments/N1_1308.RDS")
-#Economy$reload(lossFunc = compute_td_loss)
-
-# remove initial periods
-History <- Economy$EpisodeHistory[50:length(Economy$EpisodeHistory)]
-rm(Economy)
-
-# derive time series
-Series <- History %>% deriveTimeSeries
-
-# remove some more burnin
-Series <- Series[50:nrow(Series), ]
-Series$period <- 1:nrow(Series)
-
-# find 'recessions'
-Recessions <- findRecessions(Series$output, streak = 4)
-
-# output plot
-linePlot(
-  mutate(Series, series = "output"), 
-  yvar = "output", xvar = "period",
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
-
-tibble(
-  output = Series$output,
-  defaults = countDefaults(History[50:length(History)]),
-  period = Series$period
-) %>% linePlotDots(
-  yvar1 = "output", yvar2 = "defaults",
-  scale_factor = 550,
-  title = "Simulated Output",
-  recStart = Recessions$start,
-  recEnd = Recessions$end
-)
+drawLineDotPlot <- function(sim_series, sim_recessions, history, scale_factor = 550) {
+  tibble(
+    output = sim_series$output,
+    defaults = countDefaults(history[50:length(history)]),
+    period = sim_series$period
+  ) %>% linePlotDots(
+    yvar1 = "output", yvar2 = "defaults",
+    scale_factor = scale_factor,
+    title = "Simulated Output",
+    recStart = sim_recessions$start,
+    recEnd = sim_recessions$end
+  )
+} 
 
 # output vs consumption / investment
-plotOC <- linePlot2(
-  Series, 
-  yvar1 = "output", 
-  yvar2 = "consumption", 
-  title = "Consumption",
-  scale_factor = 1,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
-
-plotOI <- linePlot2(
-  Series, 
-  yvar1 = "output", 
-  yvar2 = "investment",
-  title = "Investment",
-  scale_factor = 1.5,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
-
-# output vs loans / deposits
-plotOL <- linePlot2(
-  Series, 
-  yvar1 = "output", 
-  yvar2 = "loans", 
-  title = "Loans",
-  scale_factor = 1,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
-
-plotOD <- linePlot2(
-  Series, 
-  yvar1 = "output", 
-  yvar2 = "deposits", 
-  title = "Deposits",
-  scale_factor = 0.1,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
-
-grid.arrange(plotOL, plotOD, plotOI, plotOC, nrow = 4)
+drawFourPlots <- function(sim_series, sim_recessions, sc_f = c(1,1.5,1,1)) {
+  plotOC <- linePlot2(
+    sim_series, 
+    yvar1 = "output", 
+    yvar2 = "consumption", 
+    title = "Consumption",
+    scale_factor = sc_f[1],
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end
+  )
+  
+  plotOI <- linePlot2(
+    sim_series, 
+    yvar1 = "output", 
+    yvar2 = "investment",
+    title = "Investment",
+    scale_factor = sc_f[2],
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end
+  )
+  
+  # output vs loans / deposits
+  plotOL <- linePlot2(
+    sim_series, 
+    yvar1 = "output", 
+    yvar2 = "loans", 
+    title = "Loans",
+    scale_factor = sc_f[3],
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end
+  )
+  
+  plotOD <- linePlot2(
+    sim_series, 
+    yvar1 = "output", 
+    yvar2 = "deposits", 
+    title = "Deposits",
+    scale_factor = sc_f[4],
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end
+  )
+  
+  grid.arrange(plotOL, plotOD, plotOI, plotOC, nrow = 4)
+  
+}
 
 # output vs rates
-linePlot2(
-  Series, 
-  yvar1 = "output", 
-  yvar2 = "depositRate", 
-  scale_factor = 30000,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
+drawOutputvsRates <- function(sim_series, sim_recessions, type = "deposit") {
+  if (type == "deposit") {
+    linePlot2(
+      sim_series, 
+      yvar1 = "output", 
+      yvar2 = "depositRate", 
+      scale_factor = 30000,
+      recStart = sim_recessions$start, 
+      recEnd = sim_recessions$end
+    )
+  } else if (type == "loan") {
+    linePlot2(
+      sim_series, 
+      yvar1 = "loans", 
+      yvar2 = "loanRate", 
+      scale_factor = 30000,
+      recStart = sim_recessions$start, 
+      recEnd = sim_recessions$end
+    )
+  } else if (type == "approval") {
+    linePlot2(
+      sim_series, 
+      yvar1 = "loans", 
+      yvar2 = "approvalRate", 
+      scale_factor = 3000,
+      recStart = sim_recessions$start, 
+      recEnd = sim_recessions$end
+    )
+  }
+}
 
-linePlot2(
-  Series, 
-  yvar1 = "loans", 
-  yvar2 = "loanRate", 
-  scale_factor = 30000,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
+# main description --------------------------------------------------------
+#' This section describes the results of the benchmark case (the
+#' section titled 'emerging dynamics')
 
-linePlot2(
-  Series, 
-  yvar1 = "loans", 
-  yvar2 = "approvalRate", 
-  scale_factor = 3000,
-  recStart = Recessions$start, 
-  recEnd = Recessions$end
-)
+History <- readRDS("R/experiments/N2.RDS")$EpisodeHistory
+History <- History[50:length(History)]
+Series  <- deriveTimeSeries(History)
+Series  <- Series[50:nrow(Series), ]
+Series$period <- 1:nrow(Series)
+Recessions <- findRecessions(Series$output, streak = 4)
+
+drawLinePlot(Series, Recessions)
+drawLineDotPlot(Series, Recessions, History, scale_factor = 650)
+drawFourPlots(Series, Recessions, sc_f = c(1,3,1,1))
+drawOutputvsRates(Series, Recessions, "deposit")
+drawOutputvsRates(Series, Recessions, "loan")
+drawOutputvsRates(Series, Recessions, "approval")
 
 # correlations
-library(PerformanceAnalytics)
 chart.Correlation(
   select(
     Series, 
-    -c(depositRate, loanRate, approvalRate, numberWithdrawals, period, wage)
+    -c(depositRate, loanRate, approvalRate, rate, numberWithdrawals, period, wage)
   ), 
   histogram = TRUE, pch = 19
 )
@@ -142,132 +156,78 @@ Comovements <- cbind(names(Series), Comovements) %>% as_tibble
 colnames(Comovements) <- c("series", -6:6)
 
 
-# experiment 1 ------------------------------------------------------------
-Economy_G1 <- readRDS("R/experiments/G1_1608.RDS")
-#Economy_G1$reload(lossFunc = compute_td_loss)
+# baseline - three simulations ---------------------------------------------
+#' Here I read in the three additional simulations of the benchmark case,
+#' which are used to compare it to the deposit guarantee case.
 
-# remove initial periods
-History_G1 <- Economy_G1$EpisodeHistory[25:length(Economy_G1$EpisodeHistory)]
-rm(Economy_G1)
-
-# derive time series
-Series_G1 <- History_G1 %>% deriveTimeSeries
-
-# remove some more burnin
-Series_G1 <- Series_G1[50:nrow(Series_G1), ]
-Series_G1$period <- 1:nrow(Series_G1)
+# derive aggreagates
+Series_N2 <- paste0("R/experiments/N2s",1:3,".RDS") %>%
+  map(readRDS) %>%
+  map(~ .$EpisodeHistory[50:length(.$EpisodeHistory)]) %>% # remove some burnin 
+  map(deriveTimeSeries) %>%
+  map(~ .[50:nrow(.), ]) %>% # some additional burnin
+  map(~ mutate(., period = 1:nrow(.)))
 
 # find 'recessions'
-Recessions_G1 <- findRecessions(Series_G1$output, streak = 4)
-
-# output plot
-linePlot(
-  mutate(Series_G1, series = "output"), 
-  yvar = "output", xvar = "period",
-  recStart = Recessions_G1$start, 
-  recEnd = Recessions_G1$end
-)
-
-tibble(
-  output = Series_G1$output,
-  defaults = countDefaults(History_G1[50:length(History_G1)]),
-  period = Series_G1$period
-) %>% linePlotDots(
-  yvar1 = "output", yvar2 = "defaults",
-  scale_factor = 550,
-  title = "Simulated Output",
-  recStart = Recessions_G1$start,
-  recEnd = Recessions_G1$end
-)
+Recessions_N2 <- Series_N2 %>%
+  map(~ findRecessions(.$output, streak = 4))
 
 
-# correlations
-library(PerformanceAnalytics)
-chart.Correlation(
-  select(
-    Series_G1, 
-    -c(depositRate, loanRate, approvalRate, numberWithdrawals, period, wage)
-  ), 
-  histogram = TRUE, pch = 19
-)
+# experiment 1 ------------------------------------------------------------
+#' Here I read in the results of the experiment of introducing deposit
+#' guarantees, and compare them to the bencmark case
 
-# test output for stationarity
-lm(output ~ period, data = Series_G1) %>% summary
-Box.test(Series_G1$output, lag = 20, type = "Ljung-Box")
+# derive aggreagates
+Series_G2 <- paste0("R/experiments/G2s",1:3,".RDS") %>%
+  map(readRDS) %>%
+  map(~ .$EpisodeHistory[50:length(.$EpisodeHistory)]) %>%
+  map(deriveTimeSeries) %>%
+  map(~ .[50:nrow(.), ]) %>% # some additional burnin
+  map(~ mutate(., period = 1:nrow(.)))
 
-# volatilities
-Volatilities_G1 <- tibble(
-  series = names(Series_G1),
-  cv = reduce(map(Series_G1, function(x) sd(x)/mean(x)),c),
-  ac = reduce(map(Series_G1, function(x) acf(x)$acf[2]),c),
-  cr = reduce(map(Series_G1, function(x) cor(x, Series_G1$output)),c)
-)
+# find 'recessions'
+Recessions_G2 <- Series_G2 %>%
+  map(~ findRecessions(.$output, streak = 4))
 
-# output vs rates
-linePlot2(
-  Series_G1, 
-  yvar1 = "output", 
-  yvar2 = "depositRate", 
-  scale_factor = 1,
-  recStart = Recessions_G1$start, 
-  recEnd = Recessions_G1$end
-)
+# mean withdrawals
+N2_Withdrawals <- Series_N2 %>%
+  map(~ .$numberWithdrawals) %>%
+  reduce(c)
 
-linePlot2(
-  Series_G1, 
-  yvar1 = "loans", 
-  yvar2 = "loanRate", 
-  scale_factor = 30000,
-  recStart = Recessions_G1$start, 
-  recEnd = Recessions_G1$end
-)
+G2_Withdrawals <- Series_G2 %>%
+  map(~ .$numberWithdrawals) %>%
+  reduce(c)
 
-linePlot2(
-  Series_G1, 
-  yvar1 = "loans", 
-  yvar2 = "approvalRate", 
-  scale_factor = 3000,
-  recStart = Recessions_G1$start, 
-  recEnd = Recessions_G1$end
-)
+t.test(N2_Withdrawals, G2_Withdrawals)
+
+# mean loan rate
+N2_LoanRate <- Series_N2 %>%
+  map(~ .$loanRate) %>%
+  reduce(c)
+
+G2_LoanRate <- Series_G2 %>%
+  map(~ .$loanRate) %>%
+  reduce(c)
+
+t.test(N2_LoanRate, G2_LoanRate)
+
+# jitter of deposit rates
+N2_DepositRate <- Series_N2 %>%
+  map(~ .$depositRate) %>%
+  reduce(c)
+
+G2_DepositRate <- Series_G2 %>%
+  map(~ .$depositRate) %>%
+  reduce(c)
+
+t.test(N2_DepositRate, G2_DepositRate)
 
 tibble(
-  output = c(Series$output, Series_G1$output),
-  scenario = c(rep("baseline", nrow(Series)), rep("guarantee", nrow(Series_G1)))
-) %>%
-  ggplot(aes(scenario, output)) +
-  #geom_point(aes(colour = scenario)) +
-  geom_jitter(aes(colour = scenario))
-
-
-tibble(
-  output = c(Series$numberWithdrawals, Series_G1$numberWithdrawals),
-  scenario = c(rep("baseline", nrow(Series)), rep("guarantee", nrow(Series_G1)))
-) %>%
-  ggplot(aes(scenario, output)) +
-  #geom_point(aes(colour = scenario)) +
-  geom_jitter(aes(colour = scenario)) +
-  labs(x = "", y = "Deposit withdrawals") +
-  ggtitle("Difference in deposit withdrawals") +
-  scale_colour_manual(values = c("blue","orange")) +
-  theme(
-    #axis.line = element_line(size = 1, colour = "black"),
-    panel.grid.major = element_line(colour = "#d3d3d3"), 
-    panel.grid.minor = element_blank(),
-    panel.border = element_blank(), panel.background = element_blank()
-  ) +
-  theme(
-    plot.title = element_text(size = 14, face = "bold"),
-    text = element_text(family = "serif"),
-    axis.text.x = element_text(colour = "black", size = 10),
-    axis.text.y = element_text(colour = "black", size = 10),
-    legend.key = element_rect(fill = "white", colour = "white")
+  output = c(N2_DepositRate, G2_DepositRate),
+  scenario = c(
+    rep("baseline", length(N2_DepositRate)), 
+    rep("guarantee", length(N2_DepositRate))
   )
-
-
-tibble(
-  output = c(Series$depositRate, Series_G1$depositRate),
-  scenario = c(rep("baseline", nrow(Series)), rep("guarantee", nrow(Series_G1)))
 ) %>%
   ggplot(aes(scenario, output)) +
   #geom_point(aes(colour = scenario)) +
@@ -289,83 +249,100 @@ tibble(
     legend.key = element_rect(fill = "white", colour = "white")
   )
 
+# jitter of output
+N2_Output <- Series_N2 %>%
+  map(~ .$output) %>%
+  reduce(c)
+
+G2_Output <- Series_G2 %>%
+  map(~ .$output) %>%
+  reduce(c)
+
+t.test(N2_Output, G2_Output)
+
+tibble( 
+  output = c(N2_Output, G2_Output),
+  scenario = c(
+    rep("baseline", length(N2_Output)), 
+    rep("guarantee", length(G2_Output))
+  )
+) %>%
+  ggplot(aes(scenario, output)) +
+  #geom_point(aes(colour = scenario)) +
+  geom_jitter(aes(colour = scenario)) +
+  labs(x = "", y = "Output") +
+  ggtitle("Difference in output") +
+  scale_colour_manual(values = c("blue","orange")) +
+  theme(
+    #axis.line = element_line(size = 1, colour = "black"),
+    panel.grid.major = element_line(colour = "#d3d3d3"), 
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(), panel.background = element_blank()
+  ) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    text = element_text(family = "serif"),
+    axis.text.x = element_text(colour = "black", size = 10),
+    axis.text.y = element_text(colour = "black", size = 10),
+    legend.key = element_rect(fill = "white", colour = "white")
+  )
+
 # experiment 2 ------------------------------------------------------------
-History_R <- list()
-R1 <- readRDS("R/experiments/R1.RDS")
-R2 <- readRDS("R/experiments/R2.RDS")
-R3 <- readRDS("R/experiments/R3.RDS")
-R4 <- readRDS("R/experiments/R4.RDS")
-R5 <- readRDS("R/experiments/R5.RDS")
+#' Here I read in all the simulations of the experiment
+#' where I vary the required reserve ratio and compare the
+#' means and standard deviations of the various time series
 
-History_R[[1]] <- R1$EpisodeHistory[900:length(TT$EpisodeHistory)]
-History_R[[2]] <- R2$FullHistory[[4]][600:length(TT$FullHistory[[4]])]
-History_R[[3]] <- R3$EpisodeHistory[300:length(TT$EpisodeHistory)]
-History_R[[4]] <- R4$FullHistory[[4]][1000:length(TT$FullHistory[[4]])]
-History_R[[5]] <- R5$EpisodeHistory[30:length(TT$EpisodeHistory)]
+# derive aggreagates
+summarizeSeries <- function(paths) {
+  paths %>%
+    map(readRDS) %>%
+    map(~ .$EpisodeHistory[50:length(.$EpisodeHistory)]) %>%
+    map(deriveTimeSeries) %>%
+    map(~ .[50:nrow(.), ]) %>% # some additional burnin
+    map(~ mutate(., period = 1:nrow(.))) %>%
+    map(function(tb) {
+      tb %>%
+        summarise(
+          output_m = mean(output),
+          output_v = sd(output),
+          deposits_m = mean(deposits),
+          deposits_v = sd(deposits),
+          loans_m = mean(loans),
+          loans_v = sd(loans),
+          consumption_m = mean(consumption),
+          consumption_v = sd(consumption),
+          investment_m = mean(investment),
+          investment_v = sd(investment),
+          deposit_interst_m = mean(depositRate),
+          deposit_interest_v = sd(depositRate),
+          loan_interest_m = mean(loanRate),
+          loan_interest_v = sd(loanRate)
+        )
+    }) %>%
+    reduce(rbind) %>%
+    colMeans
+}
 
-Series_R <- History_R %>%
-  map(deriveTimeSeries) %>%
-  map(function(x) x[20:nrow(x), ])
+summaryTable <- c(1:5) %>% # for each configuration
+  map(~ paste0("R/experiments/R", .,"s",1:3,".RDS")) %>% # for each simulation
+  map(summarizeSeries) %>% # summarize values
+  reduce(rbind) %>% # and combine in a df
+  as_tibble %>%
+  mutate(rate = c(0.04, 0.08, 0.12, 0.16, 0.20))
 
-Series_R[[1]]$reserveRatio <- 0.04
-Series_R[[2]]$reserveRatio <- 0.08
-Series_R[[3]]$reserveRatio <- 0.12
-Series_R[[4]]$reserveRatio <- 0.16
-Series_R[[5]]$reserveRatio <- 0.20
-
-Data_R <- Series_R %>% reduce(rbind)
-
-lm(deposits ~ . - wage, data = Data_R) %>%
-  summary
-lm(output ~ reserveRatio, data = Data_R) %>% summary  
-lm(consumption ~ reserveRatio, data = Data_R) %>% summary  
-
-lm(output ~ lag(output) + lag(capital) + lag(depositRate) + lag(loanRate) + lag(rate) +
-     lag(deposits) + lag(loans) + lag(numberWithdrawals) +
-     lag(numberDefaults) + lag(consumption) + lag(investment) + 
-     I(reserveRatio > 0.04), data = Data_R) %>%
-  summary
-
-library(PerformanceAnalytics)
-chart.Correlation(
-  select(
-    Data_R, 
-    -wage
-  ), 
-  histogram = TRUE, pch = 19
-)
-
-Data_R %>%
-  group_by(reserveRatio) %>%
-  summarise(sd = sd(deposits), mean = mean(deposits)) %>%
-  ggplot(aes(x = reserveRatio, y = mean)) +
+# plot of average output
+ggplot(aes(x = rate, y = output_m), data = summaryTable) +
   geom_line(color = "blue", lwt = 2) +
-  geom_pointrange(aes(ymin = mean - sd, ymax = mean + sd), color = "darkblue")  +
-  labs(x = "required reserves", y = "deposits") +
-  ggtitle("Average Deposits vs Required Reserves") +
-  theme(
-    axis.line = element_line(size = 1, colour = "black"),
-    panel.grid.major = element_line(colour = "#d3d3d3"), 
-    panel.grid.minor = element_blank(),
-    panel.border = element_blank(), panel.background = element_blank()
-  ) +
-  theme(
-    plot.title = element_text(size = 14, family = "serif", face = "bold"),
-    text = element_text(family = "serif"),
-    axis.text.x = element_text(colour = "black", size = 10),
-    axis.text.y = element_text(colour = "black", size = 10),
-    legend.key = element_rect(fill = "white", colour = "white")
-  )
-
-
-Data_R %>%
-  group_by(reserveRatio) %>%
-  summarise(sd = sd(depositRate), mean = mean(depositRate)) %>%
-  ggplot(aes(x = reserveRatio, y = mean)) +
-  geom_line(color = "blue", lwt = 2) +
-  geom_pointrange(aes(ymin = mean - sd, ymax = mean + sd), color = "darkblue")  +
+  geom_pointrange(
+    aes(
+      ymin = output_m - output_v, 
+      ymax = output_m + output_v
+    ), 
+    color = "darkblue"
+  )  +
   labs(x = "required reserves", y = "depositRate") +
-  ggtitle("Average depositRate vs Required Reserves") +
+  ylim(1600, 2500) +
+  ggtitle("Average Output vs Required Reserves") +
   theme(
     axis.line = element_line(size = 1, colour = "black"),
     panel.grid.major = element_line(colour = "#d3d3d3"), 
@@ -380,4 +357,3 @@ Data_R %>%
     legend.key = element_rect(fill = "white", colour = "white")
   )
 
-Data_R %>% group_by(reserveRatio) %>% summarise_all(c("mean" = mean, "sd" = sd))
