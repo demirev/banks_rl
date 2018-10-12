@@ -15,7 +15,9 @@ drawLinePlot <- function(sim_series, sim_recessions) {
   )
 }
 
-drawLineDotPlot <- function(sim_series, sim_recessions, history, scale_factor = 550) {
+drawLineDotPlot <- function(sim_series, sim_recessions, history, 
+                            scale_factor = 550, colp = c("blue","orange"),
+                            title = "Simulated Output") {
   tibble(
     output = sim_series$output,
     defaults = countDefaults(history[50:length(history)]),
@@ -23,9 +25,10 @@ drawLineDotPlot <- function(sim_series, sim_recessions, history, scale_factor = 
   ) %>% linePlotDots(
     yvar1 = "output", yvar2 = "defaults",
     scale_factor = scale_factor,
-    title = "Simulated Output",
-    recStart = sim_recessions$start,
-    recEnd = sim_recessions$end
+    title = title,
+    recStart = sim_recessions$start, 
+    recEnd = sim_recessions$end,
+    colp = colp
   )
 } 
 
@@ -120,7 +123,7 @@ Series$period <- 1:nrow(Series)
 Recessions <- findRecessions(Series$output, streak = 4)
 
 drawLinePlot(Series, Recessions)
-drawLineDotPlot(Series, Recessions, History, scale_factor = 650)
+drawLineDotPlot(Series, Recessions, History, scale_factor = 100)
 drawFourPlots(Series, Recessions, sc_f = c(1,3,1,1))
 drawOutputvsRates(Series, Recessions, "deposit")
 drawOutputvsRates(Series, Recessions, "loan")
